@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wherebear · 30 设计方案预览</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Hanken+Grotesk:wght@500;700;800&family=Nunito:wght@400;700;800;900&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: #e7e7ee;
+    color: #1f2024;
+  }
+
+  /* ---------- App chrome (NOT themed) ---------- */
+  .bar {
+    position: sticky; top: 0; z-index: 30;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 12px 18px; background: #ffffff; border-bottom: 1px solid #e2e2ea;
+    box-shadow: 0 2px 10px rgba(0,0,0,.04); flex-wrap: wrap;
+  }
+  .bar-title { font-weight: 800; font-size: 15px; letter-spacing: -.01em; }
+  .bar-sub { font-size: 12.5px; color: #6a6a78; margin-top: 2px; }
+  .bar-sub b { color: #1f2024; }
+  .bar-r { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .bar button, .reflink {
+    font-family: inherit; font-size: 13px; font-weight: 600;
+    border: 1px solid #dcdce4; background: #fff; color: #1f2024;
+    padding: 7px 11px; border-radius: 10px; cursor: pointer; text-decoration: none;
+    display: inline-flex; align-items: center; gap: 6px; line-height: 1;
+  }
+  .bar button:hover, .reflink:hover { background: #f3f3f7; }
+  .bar button:active { transform: translateY(1px); }
+  #idx { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 13px; min-width: 58px; text-align: center; color: #4a4a55; }
+  #sel { font-family: inherit; font-size: 13px; padding: 7px 8px; border-radius: 10px; border: 1px solid #dcdce4; background: #fff; max-width: 200px; }
+  .reflink { background: #1f2024; color: #fff; border-color: #1f2024; }
+  .reflink:hover { background: #34343f; }
+
+  .palette { background: #fbfbfd; border-bottom: 1px solid #e6e6ee; padding: 12px 18px 16px; }
+  .pal-group { margin-bottom: 10px; }
+  .pal-h { font-size: 11px; font-weight: 700; letter-spacing: .04em; color: #8a8a96; text-transform: uppercase; margin: 4px 0 7px; }
+  .pal-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pal-chip {
+    font-size: 12px; font-weight: 600; border: 1px solid #e0e0e8; background: #fff;
+    padding: 6px 9px; border-radius: 9px; cursor: pointer; color: #3a3a44;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .pal-chip:hover { border-color: #b9bdc9; }
+  .pal-chip .dot { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+  .pal-chip.active { background: #1f2024; color: #fff; border-color: #1f2024; }
+  .pal-chip .n { font-variant-numeric: tabular-nums; opacity: .6; font-weight: 700; }
+
+  .hint { text-align: center; font-size: 12px; color: #7a7a86; padding: 10px 16px 0; }
+
+  /* ---------- Stage (studio behind phones, fixed neutral) ---------- */
+  .stage {
+    /* token defaults — every theme overrides a few of these inline */
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface2: color-mix(in srgb, var(--text) 5%, var(--surface));
+    --border: color-mix(in srgb, var(--text) 12%, var(--surface));
+    --text: #1a1a1a;
+    --muted: color-mix(in srgb, var(--text) 50%, var(--bg));
+    --primary: #b9542f;
+    --accent: #cf9b2e;
+    --onPrimary: #ffffff;
+    --r: 16px;
+    --shadow: 0 8px 22px rgba(20,20,30,.08);
+    --font: 'Inter', system-ui, sans-serif;
+    --font-display: var(--font);
+    --primarySoft: color-mix(in srgb, var(--primary) 13%, var(--surface));
+    --primaryChip: color-mix(in srgb, var(--primary) 20%, var(--surface));
+    --accentSoft: color-mix(in srgb, var(--accent) 18%, var(--surface));
+
+    background:
+      radial-gradient(circle at 14px 14px, rgba(0,0,0,.045) 1.5px, transparent 1.6px) 0 0 / 28px 28px,
+      #e9e9ef;
+    padding: 26px 18px 40px;
+    overflow-x: auto;
+  }
+  .frames { display: flex; gap: 26px; align-items: flex-start; justify-content: center; min-width: min-content; flex-wrap: wrap; }
+
+  .phone-wrap { display: flex; flex-direction: column; align-items: center; gap: 9px; }
+  .phone {
+    width: 296px; background: #15151b; border-radius: 42px; padding: 9px;
+    box-shadow: 0 24px 50px rgba(18,18,28,.28), 0 2px 0 rgba(255,255,255,.04) inset;
+    flex-shrink: 0;
+  }
+  .screen {
+    position: relative; height: 600px; overflow: hidden; border-radius: 34px;
+    background: var(--pageBg, var(--bg)); color: var(--text);
+    font-family: var(--font); display: flex; flex-direction: column;
+  }
+  .scroll { overflow-y: auto; flex: 1; }
+  .scroll::-webkit-scrollbar { width: 0; }
+  .cap { font-size: 12.5px; font-weight: 600; color: #585866; }
+
+  /* status bar + top bar */
+  .statusbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px 4px; font-size: 12px; font-weight: 700; color: var(--text); }
+  .statusbar .r { display: flex; gap: 5px; opacity: .8; font-size: 11px; }
+  .topbar { display: flex; align-items: center; gap: 10px; padding: 8px 16px 10px; }
+  .tb-ic { width: 30px; height: 30px; border-radius: 50%; background: var(--surface2); color: var(--text); display: grid; place-items: center; font-size: 15px; flex-shrink: 0; }
+  .tb-title { font-weight: 700; font-size: 15px; font-family: var(--font-display); flex: 1; }
+  .tb-act { font-size: 12.5px; font-weight: 700; color: var(--primary); }
+  .langpill { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; font-size: 11px; font-weight: 700; }
+  .langpill b { background: var(--surface2); color: var(--muted); padding: 4px 8px; }
+  .langpill i { background: var(--primary); color: var(--onPrimary); padding: 4px 8px; font-style: normal; }
+
+  .pad { padding: 6px 16px 18px; }
+
+  /* HOME */
+  .home-pad { padding: 8px 20px 20px; display: flex; flex-direction: column; flex: 1; }
+  .home-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .wb-h1 { font-family: var(--font-display); font-weight: 800; font-size: 32px; letter-spacing: -.025em; line-height: 1; color: var(--text); position: relative; display: inline-block; }
+  .spark { color: var(--accent); font-size: 14px; position: absolute; top: -6px; right: -16px; }
+  .tagline { color: var(--muted); font-size: 14px; margin-top: 12px; line-height: 1.45; font-weight: 500; }
+  .tagline .en { font-size: 12px; opacity: .8; }
+  .home-head-r { display: flex; flex-direction: column; align-items: flex-end; gap: 9px; }
+  .bear { font-size: 40px; line-height: 1; }
+  .findbtn {
+    margin-top: 34px; width: 100%; text-align: left; cursor: pointer;
+    background: var(--accentSoft); border: 1px solid var(--border); border-radius: calc(var(--r) * 1.5);
+    box-shadow: var(--shadow); padding: 22px 18px; display: flex; align-items: center; gap: 15px;
+    font-family: var(--font);
+  }
+  .findbtn-ic { width: 70px; height: 70px; border-radius: calc(var(--r) * 1.1); background: var(--primary); color: var(--onPrimary); display: grid; place-items: center; font-size: 30px; flex-shrink: 0; }
+  .findbtn-t { font-size: 21px; font-weight: 800; color: var(--text); font-family: var(--font-display); letter-spacing: -.01em; }
+  .findbtn-d { font-size: 12.5px; color: var(--muted); margin-top: 4px; line-height: 1.35; }
+  .findbtn-ch { font-size: 26px; color: var(--primary); margin-left: auto; font-weight: 700; }
+  .grow { flex: 1; }
+  .staff { text-align: center; margin-top: 22px; font-size: 12px; font-weight: 600; color: var(--muted); border: 1px dashed var(--border); border-radius: 999px; padding: 9px; font-family: ui-monospace, monospace; }
+
+  /* shared cards / buttons / chips */
+  .wb-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); box-shadow: var(--shadow); }
+  .wb-btn-primary { background: var(--primary); color: var(--onPrimary); border: none; border-radius: var(--r); font-family: var(--font-display); font-weight: 700; font-size: 14px; padding: 13px 16px; cursor: pointer; }
+  .wb-btn-ghost { background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: var(--r); font-family: var(--font); font-weight: 700; font-size: 14px; padding: 13px 16px; cursor: pointer; }
+  .wb-chip { background: var(--primarySoft); color: var(--primary); border-radius: 999px; font-size: 12px; font-weight: 700; padding: 7px 12px; display: inline-flex; align-items: center; gap: 5px; }
+  .wb-chip.sm { font-size: 10.5px; padding: 4px 8px; background: var(--surface2); color: var(--muted); }
+
+  /* FIND */
+  .searchrow { display: flex; align-items: center; gap: 9px; padding: 13px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); margin: 4px 0 11px; box-shadow: var(--shadow); }
+  .searchrow .q { font-weight: 700; font-size: 15px; }
+  .searchrow .clr { margin-left: auto; color: var(--muted); }
+  .methods { display: flex; gap: 7px; margin-bottom: 14px; }
+  .methods .m { flex: 1; justify-content: center; }
+  .answer { font-family: var(--font-display); font-weight: 700; font-size: 18px; line-height: 1.35; padding: 4px 2px 12px; color: var(--text); }
+  .answer b { color: var(--primary); }
+  .answer-en { font-size: 12.5px; font-weight: 500; color: var(--muted); margin-top: 3px; }
+  .prod { padding: 14px; margin-bottom: 13px; }
+  .prod-top { display: flex; gap: 12px; }
+  .thumb { width: 56px; height: 56px; border-radius: calc(var(--r) * .8); background: var(--accentSoft); display: grid; place-items: center; font-size: 28px; flex-shrink: 0; }
+  .prod-info { flex: 1; min-width: 0; }
+  .prod-name { font-weight: 800; font-size: 15px; font-family: var(--font-display); color: var(--text); }
+  .prod-sub { font-size: 11.5px; color: var(--muted); margin: 2px 0 6px; }
+  .chips { display: flex; gap: 5px; flex-wrap: wrap; }
+  .shelf-badge { background: var(--primary); color: var(--onPrimary); font-weight: 800; font-size: 15px; border-radius: calc(var(--r) * .7); padding: 8px 11px; height: fit-content; font-family: var(--font-display); }
+  .prod-meta { display: flex; justify-content: space-between; margin-top: 12px; font-size: 11.5px; font-weight: 700; color: var(--muted); border-top: 1px solid var(--border); padding-top: 10px; }
+  .prod-meta .strong { color: var(--primary); }
+  .maptitle { font-size: 12.5px; font-weight: 700; color: var(--muted); margin: 2px 0 8px; }
+  .mapbox { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 10px; box-shadow: var(--shadow); }
+  .mapbox svg { width: 100%; height: auto; display: block; }
+  .foot { display: flex; gap: 9px; margin-top: 14px; }
+  .foot .wb-btn-primary { flex: 1; text-align: center; }
+
+  /* SNAP */
+  .shelfsel { display: flex; align-items: center; gap: 9px; padding: 11px 13px; margin: 4px 0 12px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+  .shelfsel .shelf-badge { font-size: 13px; padding: 5px 9px; }
+  .shelfsel .chg { margin-left: auto; color: var(--primary); font-weight: 700; }
+  .viewfinder { position: relative; height: 132px; border-radius: var(--r); background: linear-gradient(135deg, color-mix(in srgb, var(--text) 82%, var(--surface)), color-mix(in srgb, var(--text) 64%, var(--surface))); display: grid; place-items: center; overflow: hidden; margin-bottom: 11px; }
+  .vf-frame { position: absolute; inset: 16px; border: 2px solid rgba(255,255,255,.85); border-radius: 12px; }
+  .vf-frame::before, .vf-frame::after { content: ""; position: absolute; width: 18px; height: 18px; border: 3px solid var(--accent); }
+  .vf-frame::before { top: -2px; left: -2px; border-right: none; border-bottom: none; border-radius: 6px 0 0 0; }
+  .vf-frame::after { bottom: -2px; right: -2px; border-left: none; border-top: none; border-radius: 0 0 6px 0; }
+  .vf-hint { position: absolute; bottom: 10px; font-size: 11px; color: rgba(255,255,255,.9); font-weight: 600; }
+  .shutter { width: 50px; height: 50px; border-radius: 50%; background: #fff; border: 4px solid var(--primary); display: grid; place-items: center; font-size: 22px; z-index: 2; }
+  .gal { width: 100%; justify-content: center; margin-bottom: 12px; }
+  .photos { display: flex; gap: 8px; margin-bottom: 14px; }
+  .ph { width: 50px; height: 50px; border-radius: calc(var(--r) * .7); background: var(--surface2); border: 1px solid var(--border); display: grid; place-items: center; font-size: 16px; color: var(--muted); position: relative; }
+  .ph.done { color: var(--primary); }
+  .ph.scan { color: var(--accent); }
+  .dethead { font-size: 13px; font-weight: 800; font-family: var(--font-display); color: var(--text); margin: 4px 2px 10px; }
+  .dethead b { color: var(--primary); }
+  .detrow { display: flex; align-items: center; gap: 11px; padding: 9px 11px; border: 1px solid var(--border); border-radius: var(--r); margin-bottom: 7px; background: var(--surface); }
+  .detrow .t { width: 36px; height: 36px; border-radius: 9px; background: var(--accentSoft); display: grid; place-items: center; font-size: 18px; }
+  .detrow .nm { flex: 1; font-size: 13px; font-weight: 600; color: var(--text); }
+  .detrow .ct { font-size: 12px; font-weight: 800; color: var(--primary); }
+  .detrow .x { color: var(--muted); font-size: 14px; }
+  .wide { width: 100%; text-align: center; }
+
+  /* ADMIN */
+  .shelfgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin: 4px 0 14px; }
+  .sg { padding: 10px 8px; border: 1px solid var(--border); border-radius: calc(var(--r) * .8); text-align: center; background: var(--surface); }
+  .sg.active { background: var(--primary); border-color: var(--primary); }
+  .sg .c { font-size: 14px; font-weight: 800; font-family: var(--font-display); color: var(--text); }
+  .sg .n { font-size: 10px; color: var(--muted); margin-top: 1px; }
+  .sg.active .c, .sg.active .n { color: var(--onPrimary); }
+  .arow { display: flex; align-items: center; gap: 11px; padding: 11px; border: 1px solid var(--border); border-radius: var(--r); margin-bottom: 8px; background: var(--surface); }
+  .arow .t { width: 38px; height: 38px; border-radius: 10px; background: var(--accentSoft); display: grid; place-items: center; font-size: 19px; }
+  .arow .info { flex: 1; min-width: 0; }
+  .arow .nm { font-size: 13px; font-weight: 700; color: var(--text); }
+  .arow .sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+  .arow .act { display: flex; gap: 7px; color: var(--muted); font-size: 14px; }
+
+  /* STATS */
+  .sum { padding: 16px; margin: 4px 0 14px; text-align: center; }
+  .sum-big { font-size: 30px; font-weight: 800; font-family: var(--font-display); color: var(--primary); letter-spacing: -.02em; }
+  .sum-sub { font-size: 11.5px; color: var(--muted); margin-top: 4px; font-weight: 600; }
+  .statgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+  .stat { padding: 13px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface); box-shadow: var(--shadow); }
+  .stat .ic { font-size: 17px; }
+  .stat .v { font-size: 22px; font-weight: 800; font-family: var(--font-display); color: var(--text); margin-top: 6px; letter-spacing: -.02em; }
+  .stat .l { font-size: 11px; color: var(--muted); font-weight: 600; margin-top: 1px; }
+  .stat .bar2 { height: 5px; border-radius: 3px; background: var(--surface2); margin-top: 9px; overflow: hidden; }
+  .stat .bar2 i { display: block; height: 100%; background: var(--primary); border-radius: 3px; }
+
+  /* ---------- MODIFIERS ---------- */
+  .stage.is-rounded { --r: 22px; }
+  .stage.is-flat { --shadow: none; }
+
+  .stage.is-brutal { --shadow: 5px 5px 0 var(--ink, #111); }
+  .stage.is-brutal .wb-card, .stage.is-brutal .searchrow, .stage.is-brutal .prod,
+  .stage.is-brutal .mapbox, .stage.is-brutal .detrow, .stage.is-brutal .arow,
+  .stage.is-brutal .stat, .stage.is-brutal .sg, .stage.is-brutal .findbtn, .stage.is-brutal .sum {
+    border-width: 2.5px; border-color: var(--ink, #111); border-radius: 8px; box-shadow: 4px 4px 0 var(--ink, #111);
+  }
+  .stage.is-brutal .wb-btn-primary, .stage.is-brutal .wb-btn-ghost { border: 2.5px solid var(--ink, #111); border-radius: 8px; box-shadow: 3px 3px 0 var(--ink, #111); }
+  .stage.is-brutal .findbtn-ic, .stage.is-brutal .thumb, .stage.is-brutal .shelf-badge { border: 2px solid var(--ink, #111); }
+  .stage.is-brutal .tb-title, .stage.is-brutal .dethead, .stage.is-brutal .wb-h1 { text-transform: uppercase; letter-spacing: -.01em; }
+
+  .stage.is-swiss .wb-card, .stage.is-swiss .searchrow, .stage.is-swiss .prod, .stage.is-swiss .mapbox,
+  .stage.is-swiss .detrow, .stage.is-swiss .arow, .stage.is-swiss .stat, .stage.is-swiss .sg, .stage.is-swiss .findbtn, .stage.is-swiss .sum { box-shadow: none; border-width: 1.5px; }
+  .stage.is-swiss .tb-title, .stage.is-swiss .dethead, .stage.is-swiss .maptitle, .stage.is-swiss .pal-h, .stage.is-swiss .wb-kicker { text-transform: uppercase; letter-spacing: .14em; }
+  .stage.is-swiss .wb-chip, .stage.is-swiss .shelf-badge, .stage.is-swiss .findbtn-ic, .stage.is-swiss .thumb { border-radius: 0; }
+
+  .stage.is-clay .wb-card, .stage.is-clay .prod, .stage.is-clay .mapbox, .stage.is-clay .detrow,
+  .stage.is-clay .arow, .stage.is-clay .stat, .stage.is-clay .findbtn, .stage.is-clay .sum, .stage.is-clay .searchrow {
+    border: none; box-shadow: 7px 7px 15px rgba(80,80,120,.18), -6px -6px 14px rgba(255,255,255,.9);
+  }
+  .stage.is-clay .wb-btn-primary { box-shadow: 5px 5px 12px rgba(80,80,120,.28), -3px -3px 9px rgba(255,255,255,.5); }
+  .stage.is-clay .findbtn-ic, .stage.is-clay .thumb { box-shadow: inset 3px 3px 7px rgba(0,0,0,.18), inset -3px -3px 7px rgba(255,255,255,.35); }
+
+  .stage.is-glass .screen::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at 80% 12%, rgba(255,255,255,.45), transparent 45%); }
+  .stage.is-glass .wb-card, .stage.is-glass .searchrow, .stage.is-glass .prod, .stage.is-glass .mapbox,
+  .stage.is-glass .detrow, .stage.is-glass .arow, .stage.is-glass .stat, .stage.is-glass .sg, .stage.is-glass .findbtn,
+  .stage.is-glass .sum, .stage.is-glass .tb-ic, .stage.is-glass .ph {
+    background: color-mix(in srgb, var(--surface) 42%, transparent);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border-color: rgba(255,255,255,.55);
+  }
+  .stage.is-glass .wb-chip { background: color-mix(in srgb, var(--surface) 50%, transparent); backdrop-filter: blur(8px); }
+
+  .stage.is-mono .wb-h1, .stage.is-mono .tb-title, .stage.is-mono .findbtn-t, .stage.is-mono .answer,
+  .stage.is-mono .prod-name, .stage.is-mono .dethead, .stage.is-mono .sum-big, .stage.is-mono .stat .v { letter-spacing: -.02em; }
+  .stage.is-mono .shelf-badge, .stage.is-mono .wb-chip { font-family: var(--font); }
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <div class="bar-l">
+    <div class="bar-title">Wherebear · 30 设计方案预览</div>
+    <div class="bar-sub" id="meta">—</div>
+  </div>
+  <div class="bar-r">
+    <button id="prev" title="上一个 (←)">◀</button>
+    <div id="idx">01 / 30</div>
+    <button id="next" title="下一个 (→)">▶</button>
+    <select id="sel"></select>
+    <button id="gridToggle">全部方案 ▾</button>
+    <a id="refLink" class="reflink" target="_blank" rel="noopener">参考 ↗</a>
+  </div>
+</header>
+
+<div class="palette" id="palette" hidden></div>
+
+<main class="stage" id="stage">
+  <div class="frames" id="frames"></div>
+</main>
+
+<div class="hint">用 ← → 方向键切换方案 · 点「全部方案」展开 30 个 · 每个方案右上角「参考」可打开对应 App 的真实设计</div>
+
+<script>
+/* ---------------- 30 design tokens (conservative → bold) ---------------- */
+const T = [
+  // ① 稳妥实用派
+  {g:1, zh:'暖色市集', en:'Warm Market', ref:'Instacart', url:'https://mobbin.com/apps/instacart-android-d0567051-bbd0-4d24-bf90-78244f1e5c29/_/flows',
+   v:{'--bg':'#faf4ec','--surface':'#fffdf8','--border':'#e8dcc9','--text':'#2a1d13','--primary':'#b9542f','--accent':'#cf9b2e','--font':"'Hanken Grotesk'",'--r':'18px','--pageBg':'radial-gradient(circle at 20% 8%, #fcf6ec, #f1e2cf)'}},
+  {g:1, zh:'大按钮零售', en:'Big-button Retail', ref:'Walmart', url:'https://mobbin.com/explore/screens/d726106b-dac2-46e3-8334-e0b777390a7e',
+   v:{'--bg':'#eef4fb','--surface':'#ffffff','--border':'#d7e3f1','--text':'#08213f','--primary':'#0a6cff','--accent':'#ffb302','--onPrimary':'#ffffff','--r':'14px'}},
+  {g:1, zh:'干净货架零售', en:'Clean Retail', ref:'Target', url:'https://mobbin.com/explore/screens/8e2ce9bd-c3b2-4b30-9343-8c0af2b66c04',
+   v:{'--bg':'#ffffff','--surface':'#ffffff','--border':'#ececec','--text':'#1a1a1a','--primary':'#cc0000','--accent':'#cc0000','--r':'10px','--shadow':'0 4px 14px rgba(0,0,0,.06)'}},
+  {g:1, zh:'中性单色', en:'Neutral + Accent', ref:'Airbnb', url:'https://mobbin.com/explore/screens/eb9bd9ac-cf67-4d6d-8c08-44e19fa8360a',
+   v:{'--bg':'#ffffff','--surface':'#ffffff','--border':'#ebebeb','--text':'#222222','--primary':'#ff385c','--accent':'#ff385c','--r':'12px','--shadow':'0 6px 16px rgba(0,0,0,.07)'}},
+  {g:1, zh:'搜索优先', en:'Search-first', ref:'Perplexity', url:'https://mobbin.com/explore/screens/da96727d-f682-4db4-a934-698b2d2540e3',
+   v:{'--bg':'#f6f6f3','--surface':'#ffffff','--border':'#e7e6e1','--text':'#1f1f1f','--primary':'#1f8a8a','--accent':'#1f8a8a','--r':'12px'}},
+  {g:1, zh:'商家后台', en:'Merchant Dashboard', ref:'Shopify', url:'https://mobbin.com/explore/screens/daf8849c-fc23-41e2-8088-35141f4972d0',
+   v:{'--bg':'#f1f2f4','--surface':'#ffffff','--border':'#e1e3e5','--text':'#1f2225','--primary':'#0a7d5a','--accent':'#0a7d5a','--r':'10px'}},
+  {g:1, zh:'地图寻路', en:'Wayfinding Map', ref:'Citymapper', url:'https://mobbin.com/screens/98d5696d-9619-4848-8d24-af403a771b6b',
+   v:{'--bg':'#ecf2f5','--surface':'#ffffff','--border':'#d6e1e8','--text':'#0e2433','--primary':'#0aa6b8','--accent':'#ffce3a','--r':'12px'}},
+  {g:1, zh:'吉祥物亲和', en:'Friendly Mascot', ref:'Duolingo', url:'https://mobbin.com/explore/screens/9eb742fe-8f9f-40f6-b1de-e99a8035734e', m:'is-rounded',
+   v:{'--bg':'#ffffff','--surface':'#ffffff','--border':'#e5e5e5','--text':'#3c3c3c','--primary':'#58cc02','--accent':'#1cb0f6','--onPrimary':'#ffffff','--font':"'Nunito'"}},
+  {g:1, zh:'图片卡片', en:'Photo-forward', ref:'Pinterest', url:'https://mobbin.com/explore/screens/bf89cfeb-3de0-45f6-85d2-29a76d87d46d',
+   v:{'--bg':'#ffffff','--surface':'#ffffff','--border':'#eeeeee','--text':'#111111','--primary':'#e60023','--accent':'#111111','--r':'16px'}},
+  {g:1, zh:'柔和治愈', en:'Calm Pastel', ref:'Headspace', url:'https://mobbin.com/explore/screens/5a42a92f-665f-47e0-8ffd-0a5fbe722eb4', m:'is-rounded',
+   v:{'--bg':'#fff6ec','--surface':'#ffffff','--border':'#f1e6d8','--text':'#2a2a40','--primary':'#ff8a3d','--accent':'#ffd23f','--font':"'Nunito'",'--r':'22px','--pageBg':'linear-gradient(180deg,#fff2e0,#fff9f1)'}},
+  {g:1, zh:'原生极简', en:'iOS-native Minimal', ref:'Things 3', url:'https://apps.apple.com/us/app/things-3/id904237743',
+   v:{'--bg':'#f2f2f7','--surface':'#ffffff','--border':'#e2e2e8','--text':'#1c1c1e','--primary':'#007aff','--accent':'#007aff','--r':'12px','--shadow':'0 4px 12px rgba(0,0,0,.05)'}},
+  {g:1, zh:'快商务清爽', en:'Q-commerce Clean', ref:'Blinkit', url:'https://apps.apple.com/in/app/blinkit-groceries-more/id960335206',
+   v:{'--bg':'#ffffff','--surface':'#ffffff','--border':'#eef0f2','--text':'#1f1f1f','--primary':'#0c831f','--accent':'#f7c33a','--onPrimary':'#ffffff','--r':'10px'}},
+  // ② 现代主流派
+  {g:2, zh:'扫描优先', en:'Scanner-first', ref:'Vivino', url:'https://play.google.com/store/apps/details?id=vivino.web.app',
+   v:{'--bg':'#f4f3f5','--surface':'#ffffff','--border':'#e6e2e8','--text':'#241a20','--primary':'#9a1f3a','--accent':'#c0392b','--r':'12px'}},
+  {g:2, zh:'AI 对话', en:'AI Conversational', ref:'Arc Search', url:'https://mobbin.com/explore/screens/0311034c-1092-47d3-910d-b5b2d1e7faba',
+   v:{'--bg':'#faf7f2','--surface':'#ffffff','--border':'#ece6dd','--text':'#1a1a1a','--primary':'#ff6a5b','--accent':'#1a1a1a','--font-display':"'Fraunces'",'--r':'18px'}},
+  {g:2, zh:'柔和圆角', en:'Soft Rounded', ref:'Cash App', url:'https://mobbin.com/explore/screens/9caf3f77-ffcd-44b7-8e4b-14623670b7f5', m:'is-rounded',
+   v:{'--bg':'#f5f5f5','--surface':'#ffffff','--border':'#ededed','--text':'#0f0f0f','--primary':'#00c244','--accent':'#0f0f0f','--onPrimary':'#ffffff','--r':'22px'}},
+  {g:2, zh:'深色高级', en:'Premium Dark', ref:'Linear', url:'https://mobbin.com/explore/screens/cc5d476b-5ba1-4bc2-bcf3-d6dcc9a636a3', m:'is-dark',
+   v:{'--bg':'#0e0e12','--surface':'#17171d','--border':'#2a2a33','--text':'#e7e7ec','--primary':'#6e79e0','--accent':'#9aa2ff','--r':'12px','--shadow':'0 10px 30px rgba(0,0,0,.5)','--pageBg':'radial-gradient(circle at 50% -10%, #1d1d28, #0e0e12)'}},
+  {g:2, zh:'杂志衬线', en:'Editorial Serif', ref:'NYT Cooking', url:'https://dribbble.com/search/editorial-app', m:'is-serif',
+   v:{'--bg':'#fffdf8','--surface':'#ffffff','--border':'#ece4d6','--text':'#1c1a16','--primary':'#1f7a63','--accent':'#c0392b','--font-display':"'Fraunces'",'--r':'6px','--shadow':'0 6px 18px rgba(0,0,0,.06)'}},
+  {g:2, zh:'Bento 网格', en:'Bento Grid', ref:'Bento (Dribbble)', url:'https://dribbble.com/search/bento-grid',
+   v:{'--bg':'#f3f3f7','--surface':'#ffffff','--border':'#e7e7ee','--text':'#18181b','--primary':'#6d28d9','--accent':'#f59e0b','--r':'18px'}},
+  {g:2, zh:'安卓表现力', en:'Material You', ref:'Material You', url:'https://dribbble.com/search/material-you', m:'is-rounded',
+   v:{'--bg':'#f5f1fa','--surface':'#fffbff','--border':'#e7dff0','--text':'#1d1b20','--primary':'#6750a4','--accent':'#7d5260','--font':"'Nunito'",'--r':'20px'}},
+  {g:2, zh:'瑞士单色', en:'Swiss Typographic', ref:'Swiss (Dribbble)', url:'https://dribbble.com/search/swiss-design', m:'is-swiss',
+   v:{'--bg':'#ffffff','--surface':'#ffffff','--border':'#111111','--text':'#111111','--primary':'#e5341f','--accent':'#111111','--font':"'Space Grotesk'",'--r':'0px','--shadow':'none'}},
+  {g:2, zh:'高饱和色块', en:'Bold Color-block', ref:'Gorillas', url:'https://gorillas.io/', m:'is-dark',
+   v:{'--bg':'#0b1f1a','--surface':'#102a24','--border':'#1d3b33','--text':'#eef6e6','--primary':'#d8f000','--accent':'#ff5a3c','--onPrimary':'#0b1f1a','--font':"'Space Grotesk'",'--r':'8px','--pageBg':'linear-gradient(180deg,#0c241e,#0a1a16)'}},
+  // ③ 前卫风格派
+  {g:3, zh:'新粗野主义', en:'Neo-brutalism', ref:'Gumroad', url:'https://mobbin.com/apps/gumroad-web-6c339505-21ed-447d-97f3-fb370fc87f27/_/flows', m:'is-brutal',
+   v:{'--bg':'#fdf7e3','--surface':'#ffffff','--border':'#111111','--ink':'#111111','--text':'#111111','--primary':'#ff90e8','--accent':'#ffc900','--onPrimary':'#111111','--font':"'Space Grotesk'",'--r':'4px'}},
+  {g:3, zh:'液态玻璃', en:'Liquid Glass', ref:'Glass (Dribbble)', url:'https://dribbble.com/search/glassmorphism', m:'is-glass',
+   v:{'--bg':'#0b1020','--surface':'#ffffff','--border':'#ffffff','--text':'#0b1020','--primary':'#3b6ef6','--accent':'#a855f7','--r':'22px','--pageBg':'linear-gradient(140deg,#a8c0ff,#d7b6ff 55%,#ffd6e8)'}},
+  {g:3, zh:'黏土拟物', en:'Claymorphism', ref:'Clay (Dribbble)', url:'https://dribbble.com/search/claymorphism', m:'is-clay is-rounded',
+   v:{'--bg':'#e9ecf6','--surface':'#f4f6fc','--border':'#e0e4f0','--text':'#3a3a55','--primary':'#7c6cf0','--accent':'#ff8fb1','--r':'26px','--pageBg':'linear-gradient(180deg,#edf0f8,#e6eaf5)'}},
+  {g:3, zh:'Y2K 复古未来', en:'Y2K', ref:'Y2K (Dribbble)', url:'https://dribbble.com/search/y2k', m:'is-dark',
+   v:{'--bg':'#0a0a18','--surface':'#15122b','--border':'#2a2350','--text':'#eafcff','--primary':'#ff43c6','--accent':'#18e0ff','--font':"'Space Grotesk'",'--r':'14px','--pageBg':'linear-gradient(140deg,#1a0b2e,#0a0a18 60%,#0a1a2e)'}},
+  {g:3, zh:'游戏化激励', en:'Gamified', ref:'Duolingo', url:'https://mobbin.com/explore/screens/9eb742fe-8f9f-40f6-b1de-e99a8035734e', m:'is-rounded',
+   v:{'--bg':'#ffffff','--surface':'#ffffff','--border':'#ececec','--text':'#3c3c3c','--primary':'#ff4b4b','--accent':'#ffc800','--onPrimary':'#ffffff','--font':"'Nunito'",'--r':'16px'}},
+  {g:3, zh:'复古杂货铺', en:'Retro Bodega', ref:"Trader Joe's", url:'https://dribbble.com/search/vintage-grocery', m:'is-serif',
+   v:{'--bg':'#fbf1dd','--surface':'#fff8ea','--border':'#e6d3ad','--text':'#3a2a14','--primary':'#b8341f','--accent':'#1e6b4f','--font-display':"'Fraunces'",'--r':'8px'}},
+  {g:3, zh:'深色霓虹', en:'Dark + Neon', ref:'Robinhood', url:'https://mobbin.com/apps/robinhood-ios-fc10375f-48a8-4492-9787-448261f297e0/_/screens', m:'is-dark',
+   v:{'--bg':'#0a0a0a','--surface':'#151515','--border':'#262626','--text':'#f4f4f4','--primary':'#c9ff3d','--accent':'#00e0a4','--onPrimary':'#0a0a0a','--r':'12px','--pageBg':'radial-gradient(circle at 50% -10%, #1a1a1a, #0a0a0a)'}},
+  {g:3, zh:'插画叙事', en:'Illustration-heavy', ref:'Babbel', url:'https://dribbble.com/search/illustration-onboarding', m:'is-rounded',
+   v:{'--bg':'#fef5ef','--surface':'#ffffff','--border':'#f3e4d9','--text':'#2d2a3a','--primary':'#ff715b','--accent':'#ffc15e','--font':"'Nunito'",'--r':'20px'}},
+  {g:3, zh:'极客终端', en:'Terminal / Dev', ref:'Raycast', url:'https://dribbble.com/search/developer-dashboard-dark', m:'is-dark is-mono',
+   v:{'--bg':'#0c0c0c','--surface':'#141414','--border':'#242424','--text':'#d6d6d6','--primary':'#ff6363','--accent':'#19f9d8','--onPrimary':'#0c0c0c','--font':"'JetBrains Mono'",'--r':'8px'}},
+];
+const GROUPS = {1:'① 稳妥实用派', 2:'② 现代主流派', 3:'③ 前卫风格派'};
+
+/* ---------------- store map ---------------- */
+function mapSVG(hot){
+  const shelves = [
+    ['A1',24,20],['A2',70,20],['A3',24,58],['A4',70,58],['A5',24,96],['A6',70,96],
+    ['B1',162,20],['B2',208,20],['B3',162,58],['B4',208,58],['B5',162,96],['B6',208,96]
+  ];
+  let r = '';
+  for(const [code,x,y] of shelves){
+    const on = code===hot;
+    r += `<rect class="shelf${on?' hot':''}" x="${x}" y="${y}" width="40" height="30" rx="4"/>`;
+    r += `<text class="shlbl${on?' hot':''}" x="${x+20}" y="${y+19}" text-anchor="middle">${code}</text>`;
+  }
+  const hx = 162+20, hy = 96;
+  return `<svg viewBox="0 0 268 150" xmlns="http://www.w3.org/2000/svg">
+    <style>
+      .shelf{fill:var(--surface2);stroke:var(--border);stroke-width:1}
+      .shelf.hot{fill:var(--primary);stroke:var(--primary)}
+      .shlbl{fill:var(--muted);font:700 9px var(--font)}
+      .shlbl.hot{fill:var(--onPrimary)}
+      .zlbl{fill:var(--muted);font:700 9px var(--font);opacity:.7}
+      .store{fill:none;stroke:var(--border);stroke-width:1.5}
+    </style>
+    <rect class="store" x="4" y="4" width="260" height="142" rx="12"/>
+    <text class="zlbl" x="50" y="14" text-anchor="middle">A 区</text>
+    <text class="zlbl" x="188" y="14" text-anchor="middle">B 区</text>
+    <text x="${hx}" y="${hy-5}" text-anchor="middle" style="font-size:15px">📍</text>
+  ${r}</svg>`;
+}
+
+/* ---------------- screen templates ---------------- */
+const sb = `<div class="statusbar"><span>9:41</span><span class="r">📶  🔋</span></div>`;
+const lang = `<span class="langpill"><b>EN</b><i>中</i></span>`;
+
+function home(){return `<div class="phone-wrap"><div class="phone"><div class="screen">${sb}
+  <div class="home-pad">
+    <div class="home-head">
+      <div><div class="wb-h1">Wherebear<span class="spark">✦</span></div>
+        <div class="tagline">拍货架，存成店里的记忆<br><span class="en">Snap shelves into store memory</span></div></div>
+      <div class="home-head-r">${lang}<div class="bear">🐻</div></div>
+    </div>
+    <button class="findbtn">
+      <div class="findbtn-ic">🔍</div>
+      <div><div class="findbtn-t">找商品</div><div class="findbtn-d">输入 / 说话 / 拍照，找到它在哪条过道</div></div>
+      <div class="findbtn-ch">›</div>
+    </button>
+    <div class="grow"></div>
+    <div class="staff">⚙️ 店员入口 · Staff</div>
+  </div></div></div><div class="cap">首页 Home</div></div>`;}
+
+function find(){return `<div class="phone-wrap"><div class="phone"><div class="screen">${sb}
+  <div class="topbar"><span class="tb-ic">←</span><span class="tb-title">找商品 · Find</span>${lang}</div>
+  <div class="scroll"><div class="pad">
+    <div class="searchrow"><span>🔍</span><span class="q">可乐</span><span class="clr">✕</span></div>
+    <div class="methods"><span class="wb-chip m">⌨️ 文字</span><span class="wb-chip m">🎤 按住说</span><span class="wb-chip m">📷 拍照</span></div>
+    <div class="answer">🎯 可乐在 <b>B5</b> 货架<div class="answer-en">Coca-Cola is on shelf B5</div></div>
+    <div class="prod">
+      <div class="prod-top">
+        <div class="thumb">🥤</div>
+        <div class="prod-info"><div class="prod-name">可口可乐 Coca-Cola</div><div class="prod-sub">汽水 · 330ml</div>
+          <div class="chips"><span class="wb-chip sm">肥宅快乐水</span><span class="wb-chip sm">汽水</span></div></div>
+        <div class="shelf-badge">B5</div>
+      </div>
+      <div class="prod-meta"><span class="strong">●●●○ 匹配强</span><span>👁 见过 12 次</span></div>
+    </div>
+    <div class="maptitle">📍 在这里找 · Where to find it</div>
+    <div class="mapbox">${mapSVG('B5')}</div>
+    <div class="foot"><button class="wb-btn-primary">再搜一次</button><button class="wb-btn-ghost">返回</button></div>
+  </div></div></div></div><div class="cap">搜索结果 Find</div></div>`;}
+
+function snap(){return `<div class="phone-wrap"><div class="phone"><div class="screen">${sb}
+  <div class="topbar"><span class="tb-ic">←</span><span class="tb-title">拍货架 · Snap</span><span class="tb-act">帮助</span></div>
+  <div class="scroll"><div class="pad">
+    <div class="shelfsel wb-card"><span>已选货架</span><span class="shelf-badge">B5</span><span class="chg">更换</span></div>
+    <div class="viewfinder"><div class="vf-frame"></div><div class="shutter">📷</div><div class="vf-hint">对准货架 · 自动识别</div></div>
+    <div class="gal wb-chip">🖼 从相册多选一整条过道</div>
+    <div class="photos"><span class="ph done">✓</span><span class="ph scan">⟳</span><span class="ph done">✓</span><span class="ph">＋</span></div>
+    <div class="dethead">识别到 <b>8</b> 件（已去重）· 8 detected</div>
+    <div class="detrow"><span class="t">🥤</span><span class="nm">可口可乐 Coca-Cola</span><span class="ct">×3</span><span class="x">✕</span></div>
+    <div class="detrow"><span class="t">🥤</span><span class="nm">雪碧 Sprite</span><span class="ct">×2</span><span class="x">✕</span></div>
+    <div class="detrow"><span class="t">🍊</span><span class="nm">芬达 Fanta</span><span class="ct">×1</span><span class="x">✕</span></div>
+    <div class="detrow"><span class="t">🥤</span><span class="nm">七喜 7Up</span><span class="ct">×2</span><span class="x">✕</span></div>
+    <div class="foot"><button class="wb-btn-primary wide">保存 8 件到 B5 · Save</button></div>
+  </div></div></div></div><div class="cap">拍货架 Snap</div></div>`;}
+
+function admin(){return `<div class="phone-wrap"><div class="phone"><div class="screen">${sb}
+  <div class="topbar"><span class="tb-ic">←</span><span class="tb-title">货架管理 · Admin</span><span class="tb-act">＋ 添加</span></div>
+  <div class="scroll"><div class="pad">
+    <div class="shelfgrid">
+      <div class="sg"><div class="c">A1</div><div class="n">12 件</div></div>
+      <div class="sg"><div class="c">A2</div><div class="n">9 件</div></div>
+      <div class="sg"><div class="c">B4</div><div class="n">15 件</div></div>
+      <div class="sg active"><div class="c">B5</div><div class="n">8 件</div></div>
+      <div class="sg"><div class="c">B6</div><div class="n">5 件</div></div>
+      <div class="sg"><div class="c">B7</div><div class="n">7 件</div></div>
+    </div>
+    <div class="dethead">B5 · 共 8 件商品</div>
+    <div class="arow"><span class="t">🥤</span><span class="info"><div class="nm">可口可乐 Coca-Cola</div><div class="sub">汽水 · 见过 12 次</div></span><span class="act">✎ 🗑</span></div>
+    <div class="arow"><span class="t">🥤</span><span class="info"><div class="nm">雪碧 Sprite</div><div class="sub">汽水 · 见过 8 次</div></span><span class="act">✎ 🗑</span></div>
+    <div class="arow"><span class="t">🍊</span><span class="info"><div class="nm">芬达 Fanta</div><div class="sub">汽水 · 见过 5 次</div></span><span class="act">✎ 🗑</span></div>
+    <div class="arow"><span class="t">💧</span><span class="info"><div class="nm">农夫山泉 Nongfu</div><div class="sub">饮用水 · 见过 20 次</div></span><span class="act">✎ 🗑</span></div>
+  </div></div></div></div><div class="cap">货架管理 Admin</div></div>`;}
+
+function stats(){return `<div class="phone-wrap"><div class="phone"><div class="screen">${sb}
+  <div class="topbar"><span class="tb-ic">←</span><span class="tb-title">运营数据 · Stats</span><span class="tb-act">⟳ 刷新</span></div>
+  <div class="scroll"><div class="pad">
+    <div class="sum"><div class="sum-big">CA$ 8.74</div><div class="sum-sub">近 30 天 · 1,240 次操作 · US$ 6.40</div></div>
+    <div class="statgrid">
+      <div class="stat"><div class="ic">📸</div><div class="v">132</div><div class="l">拍货架</div><div class="bar2"><i style="width:42%"></i></div></div>
+      <div class="stat"><div class="ic">💾</div><div class="v">132</div><div class="l">保存记忆</div><div class="bar2"><i style="width:42%"></i></div></div>
+      <div class="stat"><div class="ic">🔎</div><div class="v">612</div><div class="l">文字搜索</div><div class="bar2"><i style="width:92%"></i></div></div>
+      <div class="stat"><div class="ic">🎤</div><div class="v">188</div><div class="l">语音搜索</div><div class="bar2"><i style="width:30%"></i></div></div>
+      <div class="stat"><div class="ic">📷</div><div class="v">176</div><div class="l">拍照识别</div><div class="bar2"><i style="width:28%"></i></div></div>
+      <div class="stat"><div class="ic">🎯</div><div class="v">86%</div><div class="l">搜索命中率</div><div class="bar2"><i style="width:86%"></i></div></div>
+    </div>
+  </div></div></div></div><div class="cap">运营数据 Stats</div></div>`;}
+
+document.getElementById('frames').innerHTML = home()+find()+snap()+admin()+stats();
+
+/* ---------------- theme switching ---------------- */
+const stage = document.getElementById('stage');
+const meta = document.getElementById('meta');
+const idx = document.getElementById('idx');
+const sel = document.getElementById('sel');
+const refLink = document.getElementById('refLink');
+const palette = document.getElementById('palette');
+let cur = 0;
+
+// build <select>
+let lastG = 0, optHTML = '';
+T.forEach((t,i)=>{
+  if(t.g!==lastG){ if(lastG) optHTML+='</optgroup>'; optHTML+=`<optgroup label="${GROUPS[t.g]}">`; lastG=t.g; }
+  optHTML += `<option value="${i}">${String(i+1).padStart(2,'0')} ${t.zh} · ${t.en}</option>`;
+});
+optHTML += '</optgroup>';
+sel.innerHTML = optHTML;
+
+// build palette grid
+let palHTML = '';
+[1,2,3].forEach(g=>{
+  palHTML += `<div class="pal-group"><div class="pal-h">${GROUPS[g]}</div><div class="pal-row">`;
+  T.forEach((t,i)=>{ if(t.g!==g) return;
+    palHTML += `<button class="pal-chip" data-i="${i}"><span class="dot" style="background:${t.v['--primary']}"></span><span class="n">${String(i+1).padStart(2,'0')}</span> ${t.zh}</button>`;
+  });
+  palHTML += '</div></div>';
+});
+palette.innerHTML = palHTML;
+
+function apply(i){
+  cur = (i + T.length) % T.length;
+  const t = T[cur];
+  stage.removeAttribute('style');           // clear previous inline vars
+  for(const k in t.v) stage.style.setProperty(k, t.v[k]);
+  stage.className = 'stage ' + (t.m || '');
+  meta.innerHTML = `${GROUPS[t.g].slice(0,1)} ${GROUPS[t.g].slice(2)} · <b>${t.zh}</b> ${t.en} · 参考 ${t.ref}`;
+  idx.textContent = String(cur+1).padStart(2,'0') + ' / ' + T.length;
+  sel.value = cur;
+  refLink.href = t.url; refLink.textContent = '参考 ' + t.ref + ' ↗';
+  palette.querySelectorAll('.pal-chip').forEach(c=>c.classList.toggle('active', +c.dataset.i===cur));
+}
+
+document.getElementById('prev').onclick = ()=>apply(cur-1);
+document.getElementById('next').onclick = ()=>apply(cur+1);
+sel.onchange = e=>apply(+e.target.value);
+palette.onclick = e=>{ const b=e.target.closest('.pal-chip'); if(b) apply(+b.dataset.i); };
+document.getElementById('gridToggle').onclick = function(){
+  palette.hidden = !palette.hidden;
+  this.textContent = palette.hidden ? '全部方案 ▾' : '收起 ▲';
+};
+window.addEventListener('keydown', e=>{
+  if(e.target.tagName==='SELECT') return;
+  if(e.key==='ArrowLeft') apply(cur-1);
+  if(e.key==='ArrowRight') apply(cur+1);
+});
+
+apply(0);
+</script>
+</body>
+</html>
