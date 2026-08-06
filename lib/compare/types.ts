@@ -64,6 +64,9 @@ export interface CompareRunResult {
    *  list price for Vertex. Null if unknown. */
   costUSD: number | null;
   costBasis: 'openrouter-actual' | 'list-price-estimate';
+  /** Browser-displayable JPEG data URL of the (HEIC-converted, upright)
+   *  uploaded photo — the overlay base image. Filled in by the route. */
+  previewImage?: string;
   error?: string;
 }
 

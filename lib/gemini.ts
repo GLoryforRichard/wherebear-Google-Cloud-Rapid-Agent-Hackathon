@@ -45,7 +45,12 @@ export const VISION_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
  * 15+ s in exponential backoff. Capping in-flight calls process-wide keeps us
  * under the burst limit, so calls run back-to-back instead of being punished.
  */
-const MAX_CONCURRENT_GEMINI = 4;
+// Env-overridable: the default 4 was tuned for an unbilled trial project's
+// DSQ tier. With a card-backed billing account (still burning free-trial
+// credits) the quota is far higher — set GEMINI_MAX_CONCURRENT to widen the
+// gate without a redeploy. Prod runs 12 so /compare's Vertex paradigms don't
+// serialize behind each other.
+const MAX_CONCURRENT_GEMINI = Math.max(1, Number(process.env.GEMINI_MAX_CONCURRENT) || 4);
 let geminiInFlight = 0;
 const geminiWaiters: Array<() => void> = [];
 

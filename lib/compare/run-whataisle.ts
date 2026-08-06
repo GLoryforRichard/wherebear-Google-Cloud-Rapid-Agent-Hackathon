@@ -57,8 +57,13 @@ const CONFIGS: Record<'whataisle-openrouter' | 'whataisle-vertex', ParadigmConfi
     callModel: callModelVertex,
     modelId: COMPARE_MODEL,
     provider: 'Vertex AI (Google Cloud free trial)',
-    bandConcurrency: 2,
-    gridConcurrency: 2,
+    // Matched to the OpenRouter paradigm for a fair wall-time comparison.
+    // The old 2/2 was DSQ caution for an unbilled project; the billing
+    // account now has a card attached (still consuming free-trial credits),
+    // so the quota tier supports the same fan-out. The process-wide Vertex
+    // gate (GEMINI_MAX_CONCURRENT) is the actual ceiling.
+    bandConcurrency: 6,
+    gridConcurrency: 6,
     costBasis: 'list-price-estimate',
   },
 };

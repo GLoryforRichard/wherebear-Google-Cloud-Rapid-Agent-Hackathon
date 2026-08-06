@@ -41,6 +41,8 @@ interface CompareRunResult {
   usage: { inputTokens: number; outputTokens: number; calls: number; images: number };
   costUSD: number | null;
   costBasis: 'openrouter-actual' | 'list-price-estimate';
+  /** Server-rendered JPEG preview (HEIC-safe, upright) for the overlay. */
+  previewImage?: string;
   error?: string;
 }
 
@@ -350,10 +352,12 @@ export default function ComparePage() {
                     />
                   </div>
 
-                  {imgUrl && (
+                  {(s.result.previewImage || imgUrl) && (
                     <div style={{ position: 'relative', width: '100%', borderRadius: 8, overflow: 'hidden', marginBottom: 10 }}>
+                      {/* Server preview first: iPhone HEIC uploads can't be
+                          rendered by the browser's own object URL. */}
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={imgUrl} alt="uploaded shelf" style={{ width: '100%', display: 'block' }} />
+                      <img src={s.result.previewImage ?? imgUrl ?? undefined} alt="uploaded shelf" style={{ width: '100%', display: 'block' }} />
                       {s.result.products.flatMap((prod, i) =>
                         productBoxes(prod).map((box, j) => (
                           <div

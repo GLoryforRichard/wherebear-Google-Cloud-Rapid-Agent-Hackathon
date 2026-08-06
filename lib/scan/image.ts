@@ -33,8 +33,10 @@ type HeicConversion = 'sharp' | 'sips' | 'heic-convert';
 /**
  * Three-tier HEIC→JPEG: sharp (some libvips builds decode HEIC) → macOS sips
  * (dev machines) → heic-convert (pure JS, the Linux-production fallback).
+ * Exported so route-level callers (e.g. /api/compare) can normalize an
+ * upload ONCE before handing it to pipelines that assume sharp can decode it.
  */
-async function heicToJpeg(
+export async function heicToJpeg(
   buf: Buffer
 ): Promise<{ jpeg: Buffer; conversion: HeicConversion }> {
   try {

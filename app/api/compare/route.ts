@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import sharp from 'sharp';
 import { runWherebearParadigm } from '@/lib/compare/run-wherebear';
 import { runWhatAisleParadigm } from '@/lib/compare/run-whataisle';
+import { heicToJpeg, sniffHeic } from '@/lib/scan/image';
 import { CompareParadigm, CompareRunResult } from '@/lib/compare/types';
 
 export const runtime = 'nodejs';
@@ -37,12 +39,36 @@ export async function POST(req: NextRequest) {
     if (file.size > MAX_IMAGE_BYTES) {
       return NextResponse.json({ ok: false, error: 'Image is too large. Use a photo under 20 MB.' }, { status: 413 });
     }
-    if (file.type && (!file.type.startsWith('image/') || file.type === 'image/svg+xml')) {
+    // Some clients ship HEIC (or any photo) as application/octet-stream —
+    // let content sniffing decide; sharp errors out cleanly on non-images.
+    if (
+      file.type &&
+      file.type !== 'application/octet-stream' &&
+      (!file.type.startsWith('image/') || file.type === 'image/svg+xml')
+    ) {
       return NextResponse.json({ ok: false, error: 'Please upload a photo file.' }, { status: 400 });
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer());
+    let buffer: Buffer = Buffer.from(await file.arrayBuffer());
     const mimeType = file.type || 'image/jpeg';
+
+    // iPhone HEIC uploads: the VM's sharp/libvips has no HEIF support, and
+    // the browser can't render HEIC either. Normalize ONCE here so every
+    // paradigm (and the preview below) gets a plain JPEG.
+    if (sniffHeic(buffer)) {
+      const converted = await heicToJpeg(buffer);
+      buffer = converted.jpeg;
+    }
+
+    // Browser-displayable preview for the overlay base image (the client may
+    // have uploaded a HEIC it cannot render itself). Upright (EXIF applied),
+    // same coordinate space as every paradigm's boxes.
+    const previewJpeg = await sharp(buffer)
+      .rotate()
+      .resize(1280, 1280, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 80 })
+      .toBuffer();
+    const previewImage = `data:image/jpeg;base64,${previewJpeg.toString('base64')}`;
 
     let result: CompareRunResult;
     if (p === 'wherebear') {
@@ -50,6 +76,7 @@ export async function POST(req: NextRequest) {
     } else {
       result = await runWhatAisleParadigm(buffer, mimeType, p);
     }
+    result.previewImage = previewImage;
 
     return NextResponse.json(result);
   } catch (err) {
