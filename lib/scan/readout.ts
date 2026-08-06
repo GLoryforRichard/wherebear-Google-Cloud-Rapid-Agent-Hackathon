@@ -27,19 +27,31 @@ import {
   buildGridReadPrompt,
   buildGridReadSchema,
 } from './prompts';
+import { type RawImage, extractFromRaw } from './raw';
 import type { NormalizedBox, PreparedImage } from './types';
+
+/** Crop source: pre-decoded raw pixels when available (one decode for the
+ *  whole readout instead of one full JPEG decode PER CROP), else the JPEG.
+ *  Same decoded pixels either way — no model input changes. */
+interface CropSource {
+  jpeg: Buffer;
+  raw?: RawImage;
+}
+
+function extractCrop(src: CropSource, rect: CropRect): sharp.Sharp {
+  return src.raw ? extractFromRaw(src.raw, rect) : sharp(src.jpeg).extract(rect);
+}
 
 /** Stitch crops into one white-background numbered grid image. */
 async function buildGridImage(
-  fullJpeg: Buffer,
+  src: CropSource,
   rects: CropRect[]
 ): Promise<Buffer> {
   const layout = gridLayout(rects.length);
   const CELL = GRID_CELL_SIZE;
   const resized = await Promise.all(
     rects.map((r) =>
-      sharp(fullJpeg)
-        .extract(r)
+      extractCrop(src, r)
         .resize(CELL, CELL, { fit: 'inside', withoutEnlargement: false })
         .jpeg({ quality: 88 })
         .toBuffer()
@@ -80,12 +92,11 @@ async function buildGridImage(
 async function readOneBox(
   callModel: CallModelFn,
   modelId: string,
-  fullJpeg: Buffer,
+  src: CropSource,
   rect: CropRect,
   collect: CallOutcome[]
 ): Promise<string | null> {
-  const crop = await sharp(fullJpeg)
-    .extract(rect)
+  const crop = await extractCrop(src, rect)
     .jpeg({ quality: 88 })
     .toBuffer();
   const attempt = async (): Promise<string | null> => {
@@ -117,12 +128,12 @@ async function readOneBox(
 async function readGridChunk(
   callModel: CallModelFn,
   modelId: string,
-  fullJpeg: Buffer,
+  src: CropSource,
   rects: CropRect[],
   collect: CallOutcome[],
   repair = false
 ): Promise<(string | null)[] | null> {
-  const grid = await buildGridImage(fullJpeg, rects);
+  const grid = await buildGridImage(src, rects);
   // Some providers enforce JSON-Schema array arity more softly than others,
   // so the retry pass appends an explicit corrective line.
   const prompt = repair
@@ -145,6 +156,8 @@ async function readGridChunk(
 export interface ReadoutOptions {
   gridK?: number;
   gridConcurrency?: number;
+  /** Pre-decoded full-image pixels (see CropSource). */
+  raw?: RawImage;
 }
 
 export interface ReadoutResult {
@@ -174,6 +187,7 @@ export async function readProductNames(
   }
   const started = performance.now();
   const gridK = Math.max(1, opts.gridK ?? 6);
+  const src: CropSource = { jpeg: full.jpeg, raw: opts.raw };
   const rects = boxes.map((b) => cropRect(b, full.width, full.height));
   const outcomes: CallOutcome[] = [];
 
@@ -191,7 +205,7 @@ export async function readProductNames(
         let res = await readGridChunk(
           callModel,
           modelId,
-          full.jpeg,
+          src,
           chunk.rects,
           outcomes
         );
@@ -199,7 +213,7 @@ export async function readProductNames(
           res = await readGridChunk(
             callModel,
             modelId,
-            full.jpeg,
+            src,
             chunk.rects,
             outcomes,
             /* repair */ true
@@ -215,7 +229,7 @@ export async function readProductNames(
         fallbackChunks++;
         const singles = await Promise.all(
           chunk.rects.map((r) =>
-            readOneBox(callModel, modelId, full.jpeg, r, outcomes)
+            readOneBox(callModel, modelId, src, r, outcomes)
           )
         );
         singles.forEach((n, j) => {

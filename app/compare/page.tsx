@@ -43,6 +43,8 @@ interface CompareRunResult {
   costBasis: 'openrouter-actual' | 'list-price-estimate';
   /** Server-rendered JPEG preview (HEIC-safe, upright) for the overlay. */
   previewImage?: string;
+  /** Per-stage wall times in ms (prep/rows/detect/readout/post). */
+  stages?: Record<string, number>;
   error?: string;
 }
 
@@ -154,6 +156,18 @@ export default function ComparePage() {
     const url = URL.createObjectURL(file);
     setImgUrl(url);
     return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  // Prewarm the server the moment a file is picked: HEIC conversion, image
+  // prep, raw decode, preview, and both whataisle paradigms' single
+  // row-detect calls start now, so the pipelines are ready to go the moment
+  // Run is clicked.
+  useEffect(() => {
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('image', file);
+    fd.append('paradigm', 'prepare');
+    fetch('/api/compare', { method: 'POST', body: fd }).catch(() => {});
   }, [file]);
 
   const anyRunning = Object.values(slots).some(s => s.state === 'running');
@@ -351,6 +365,14 @@ export default function ComparePage() {
                       value={`${s.result.usage.inputTokens.toLocaleString()}/${s.result.usage.outputTokens.toLocaleString()}`}
                     />
                   </div>
+
+                  {s.result.stages && (
+                    <div style={{ fontSize: 10.5, color: '#a1a1aa', margin: '-4px 0 8px', fontFamily: 'ui-monospace, Menlo, monospace' }}>
+                      {Object.entries(s.result.stages)
+                        .map(([k, v]) => `${k} ${(v / 1000).toFixed(1)}s`)
+                        .join(' · ')}
+                    </div>
+                  )}
 
                   {(s.result.previewImage || imgUrl) && (
                     <div style={{ position: 'relative', width: '100%', borderRadius: 8, overflow: 'hidden', marginBottom: 10 }}>
