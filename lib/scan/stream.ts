@@ -74,6 +74,7 @@ export async function detectAndReadStreaming(
   const gridConcurrency = Math.max(1, opts.gridConcurrency ?? 8);
   const outcomes: CallOutcome[] = [];
   const warnings: string[] = [];
+  const bandLatencies: number[] = [];
   let fallbackChunks = 0;
 
   const slices = await Promise.all(
@@ -117,6 +118,7 @@ export async function detectAndReadStreaming(
       });
       attempts.push(o);
       outcomes.push(o);
+      bandLatencies.push(o.latencyMs);
       if (!o.ok) continue;
       const p = parseBoxes(o.rawText ?? '', slice.width, slice.height);
       if (p.ok) parsed = p;
@@ -162,6 +164,10 @@ export async function detectAndReadStreaming(
 
   const perBand = await Promise.all(
     slices.map((s, i) => bandLimit(() => runBand(s, i)))
+  );
+  console.log(
+    `[scan] band latencies (${modelId}, streaming): ` +
+    bandLatencies.map((ms) => `${Math.round(ms / 100) / 10}s`).join(' ')
   );
 
   const failed = perBand
