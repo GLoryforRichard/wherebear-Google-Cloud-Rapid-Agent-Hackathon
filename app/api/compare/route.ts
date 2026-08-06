@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
 import { runWherebearParadigm } from '@/lib/compare/run-wherebear';
@@ -17,6 +18,23 @@ const VALID_PARADIGMS: CompareParadigm[] = [
   'whataisle-openrouter',
   'whataisle-vertex',
 ];
+
+/** In-flight/recent HEIC conversions keyed by content hash. Entries expire
+ *  after 5 minutes; a failed conversion is evicted immediately so a retry
+ *  doesn't replay the cached rejection. */
+const heicConversions = new Map<string, Promise<Buffer>>();
+
+function convertHeicShared(heic: Buffer): Promise<Buffer> {
+  const key = createHash('sha1').update(heic).digest('hex');
+  let pending = heicConversions.get(key);
+  if (!pending) {
+    pending = heicToJpeg(heic).then((c) => c.jpeg);
+    heicConversions.set(key, pending);
+    pending.catch(() => heicConversions.delete(key));
+    setTimeout(() => heicConversions.delete(key), 5 * 60_000).unref();
+  }
+  return pending;
+}
 
 export async function POST(req: NextRequest) {
   let paradigm: CompareParadigm | undefined;
@@ -53,11 +71,13 @@ export async function POST(req: NextRequest) {
     const mimeType = file.type || 'image/jpeg';
 
     // iPhone HEIC uploads: the VM's sharp/libvips has no HEIF support, and
-    // the browser can't render HEIC either. Normalize ONCE here so every
-    // paradigm (and the preview below) gets a plain JPEG.
+    // the browser can't render HEIC either. Normalize here so every paradigm
+    // (and the preview below) gets a plain JPEG. The client fires all three
+    // paradigm requests with the SAME photo at once, and the pure-JS
+    // heic-convert fallback costs ~30s of CPU on the 2-vCPU VM — dedupe by
+    // content hash so the three requests share one conversion.
     if (sniffHeic(buffer)) {
-      const converted = await heicToJpeg(buffer);
-      buffer = converted.jpeg;
+      buffer = await convertHeicShared(buffer);
     }
 
     // Browser-displayable preview for the overlay base image (the client may
