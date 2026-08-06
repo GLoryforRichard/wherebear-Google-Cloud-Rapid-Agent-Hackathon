@@ -1,7 +1,20 @@
 'use client';
 
+/**
+ * Shelf-scan screen — a PURE VIEW over the global scan queue
+ * (lib/scan-queue). Photos enqueue here, then detect + auto-save entirely in
+ * the module-scope pump: navigating away, switching screens, or closing this
+ * component never interrupts an upload. The only local state is the shelf
+ * picker, the sample-photo demo path, and the chip filter.
+ *
+ * The old review-then-submit flow (removedNames + ProgressScreen handoff) is
+ * gone: detection results save to shelf memory automatically; corrections
+ * happen in Shelf admin afterward.
+ */
+
 import { useState, useEffect, useMemo } from 'react';
-import { C, FONT, SHADOW } from '@/lib/theme';
+import Link from 'next/link';
+import { C, FONT } from '@/lib/theme';
 import BearFace from './BearFace';
 import Icon from './Icon';
 import ScreenHeader from './ScreenHeader';
@@ -9,42 +22,20 @@ import ShelfScanner from './ShelfScanner';
 import type { DetectedProduct } from '@/lib/gemini';
 import { getShelf } from '@/lib/shelves';
 import StoreMapModal from './StoreMapModal';
-import { UsageTotals, EMPTY_USAGE, addUsage } from '@/lib/cost';
 import { useTranslation } from '@/lib/i18n';
+import { type QueueItem, useScanQueue } from '@/lib/scan-queue/store';
+import { enqueuePhotos, mergeDetected, removeItem, retryItem } from '@/lib/scan-queue/pump';
 
 type Screen = 'home' | 'snap' | 'progress' | 'find';
 
-export interface SnapPayload {
-  aisle: string;
-  products: DetectedProduct[];
-  /** Sum of usage across every vision call that contributed products. */
-  visionUsage: UsageTotals;
-}
-
 interface SnapScreenProps {
   go: (screen: Screen) => void;
-  onSubmit: (payload: SnapPayload) => void;
 }
 
-type PhotoStatus = 'pending' | 'detecting' | 'done' | 'error';
-
-interface PhotoState {
-  id: string;
-  file: File;
-  previewUrl: string;
-  status: PhotoStatus;
-  products: DetectedProduct[];
-  error?: string;
-  /** Per-photo Gemini + storage usage returned by /api/vision. */
-  usage?: UsageTotals;
+/** Detection finished (products known) — includes the auto-save stages. */
+function hasResult(i: QueueItem): boolean {
+  return i.status === 'detected' || i.status === 'saving' || i.status === 'saved';
 }
-
-/** Cap on simultaneous /api/vision calls per client. Each call fans into
- *  parallel Gemini sub-batches server-side, and the demo project's Vertex
- *  quota is small — 5 photos in flight caused sustained 429 backoff storms
- *  that made every photo slower. 2 keeps the pipe full without the penalty
- *  (the server also rate-gates Gemini calls globally now). */
-const CLIENT_CONCURRENCY = 2;
 
 function Label({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
@@ -58,52 +49,20 @@ function Label({ children, action }: { children: React.ReactNode; action?: React
   );
 }
 
-async function cropThumbnails(file: File, products: DetectedProduct[]): Promise<DetectedProduct[]> {
-  // Server returns a representative thumbnail per SKU. Only fall back to
-  // client-side canvas cropping if some products are missing thumbnails.
-  const needsCrop = products.some(p => !p.thumbnail && Array.isArray(p.box_2d) && p.box_2d.length === 4);
-  if (!needsCrop) return products;
-
-  const url = URL.createObjectURL(file);
-  try {
-    const img = new Image();
-    await new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve();
-      img.onerror = () => reject(new Error('image load failed'));
-      img.src = url;
-    });
-    return products.map(p => {
-      if (p.thumbnail) return p;
-      if (!p.box_2d || p.box_2d.length !== 4) return p;
-      const [y0, x0, y1, x1] = p.box_2d;
-      const sx = (Math.min(x0, x1) / 1000) * img.width;
-      const sy = (Math.min(y0, y1) / 1000) * img.height;
-      const sw = (Math.abs(x1 - x0) / 1000) * img.width;
-      const sh = (Math.abs(y1 - y0) / 1000) * img.height;
-      if (sw < 8 || sh < 8) return p;
-      const TARGET = 160;
-      const ratio = sh / sw;
-      const canvas = document.createElement('canvas');
-      canvas.width = TARGET;
-      canvas.height = Math.max(40, Math.min(TARGET * 2, Math.round(TARGET * ratio)));
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return p;
-      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-      return { ...p, thumbnail: canvas.toDataURL('image/jpeg', 0.78) };
-    });
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
-export default function SnapScreen({ go, onSubmit }: SnapScreenProps) {
+export default function SnapScreen({ go }: SnapScreenProps) {
   const { t } = useTranslation();
   // Empty until the worker picks a shelf — this gates the whole capture area,
   // so the shelf picker is the first (and only) thing they see on arrival.
   const [location, setLocation] = useState('');
   const [showMap, setShowMap] = useState(false);
-  const [photos, setPhotos] = useState<PhotoState[]>([]);
-  const [removedNames, setRemovedNames] = useState<Set<string>>(new Set());
+  const { items } = useScanQueue();
+  // Show the current shelf's working set when one is picked; otherwise the
+  // whole queue (arriving after a reload with no shelf picked still shows
+  // what's in flight).
+  const photos = useMemo(
+    () => (location ? items.filter(i => i.aisle === location) : items),
+    [items, location]
+  );
   // Built-in demo shelf photo for visitors (judges) with no real shelf at
   // hand. The button only appears if /sample-shelf.jpg actually exists in
   // public/, so shipping without the asset simply hides the feature.
@@ -124,88 +83,16 @@ export default function SnapScreen({ go, onSubmit }: SnapScreenProps) {
       .catch(() => {});
   }, []);
 
-  // Revoke preview object URLs on unmount.
-  useEffect(() => {
-    return () => {
-      photos.forEach(p => URL.revokeObjectURL(p.previewUrl));
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Worker loop — keep up to CLIENT_CONCURRENCY photos in 'detecting' at any
-  // time. The effect re-runs whenever a photo changes status (since photos is
-  // the dependency), so as soon as one finishes, the next pending one starts.
-  useEffect(() => {
-    const inFlight = photos.filter(p => p.status === 'detecting').length;
-    if (inFlight >= CLIENT_CONCURRENCY) return;
-    const pending = photos.filter(p => p.status === 'pending');
-    if (pending.length === 0) return;
-
-    const slots = CLIENT_CONCURRENCY - inFlight;
-    const toStart = pending.slice(0, slots);
-
-    setPhotos(prev =>
-      prev.map(x =>
-        toStart.find(t => t.id === x.id) ? { ...x, status: 'detecting' } : x
-      )
-    );
-
-    toStart.forEach(p => {
-      const fd = new FormData();
-      fd.append('image', p.file);
-      fd.append('aisle', location);
-      fetch('/api/vision', { method: 'POST', body: fd })
-        .then(r => r.json())
-        .then(async data => {
-          if (!data.ok) {
-            setPhotos(prev =>
-              prev.map(x => x.id === p.id ? { ...x, status: 'error', error: data.error || 'Detection failed' } : x)
-            );
-            return;
-          }
-          const raw = (data.products || []) as DetectedProduct[];
-          const withThumbs = await cropThumbnails(p.file, raw).catch(() => raw);
-          const photoUsage = (data.usage as UsageTotals | undefined) ?? { ...EMPTY_USAGE };
-          setPhotos(prev =>
-            prev.map(x => x.id === p.id ? { ...x, status: 'done', products: withThumbs, usage: photoUsage } : x)
-          );
-        })
-        .catch(err => {
-          setPhotos(prev =>
-            prev.map(x => x.id === p.id ? { ...x, status: 'error', error: err instanceof Error ? err.message : String(err) } : x)
-          );
-        });
-    });
-  }, [photos, location]);
-
-  // Merged + deduped detection across ALL completed photos — this is what
-  // we submit to the server. If two photos saw the same SKU, prefer the
-  // entry with a thumbnail and higher confidence.
-  const mergedDetected = useMemo(() => {
-    const rank = (c: string | undefined) =>
-      c === 'high' ? 3 : c === 'medium' ? 2 : c === 'low' ? 1 : 0;
-    const byName = new Map<string, DetectedProduct>();
-    for (const p of photos) {
-      if (p.status !== 'done') continue;
-      for (const prod of p.products) {
-        if (removedNames.has(prod.name)) continue;
-        const prior = byName.get(prod.name);
-        if (!prior) {
-          byName.set(prod.name, prod);
-          continue;
-        }
-        const better =
-          (!prior.thumbnail && prod.thumbnail) ||
-          rank(prod.confidence) > rank(prior.confidence);
-        if (better) byName.set(prod.name, prod);
-      }
-    }
-    return Array.from(byName.values());
-  }, [photos, removedNames]);
+  // Merged + deduped detection across ALL completed photos on this shelf —
+  // read-only: every photo auto-saves its own products; this list is the
+  // worker's confirmation glance.
+  const mergedDetected = useMemo(
+    () => mergeDetected(photos.filter(hasResult).flatMap(p => p.products), new Set()),
+    [photos]
+  );
 
   // Filtered VIEW for the Detected items list. If a photo is selected, only
-  // show its SKUs (deduped within itself); otherwise show the merged set
-  // across all photos. Submit always uses mergedDetected regardless.
+  // show its SKUs (deduped within itself); otherwise the merged set.
   const viewDetected = useMemo(() => {
     if (!filterPhotoId) return mergedDetected;
     const photo = photos.find(p => p.id === filterPhotoId);
@@ -213,37 +100,24 @@ export default function SnapScreen({ go, onSubmit }: SnapScreenProps) {
     const seen = new Set<string>();
     const out: DetectedProduct[] = [];
     for (const prod of photo.products) {
-      if (removedNames.has(prod.name)) continue;
       if (seen.has(prod.name)) continue;
       seen.add(prod.name);
       out.push(prod);
     }
     return out;
-  }, [filterPhotoId, photos, mergedDetected, removedNames]);
+  }, [filterPhotoId, photos, mergedDetected]);
 
   const handleAddFiles = (files: File[]) => {
-    if (files.length === 0) return;
-    const newStates: PhotoState[] = files.map((f, i) => ({
-      id: `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`,
-      file: f,
-      previewUrl: URL.createObjectURL(f),
-      status: 'pending',
-      products: [],
-    }));
-    setPhotos(prev => [...prev, ...newStates]);
+    if (files.length === 0 || !location) return;
+    void enqueuePhotos(files, location);
   };
 
   const handleScannerCapture = (f: File) => handleAddFiles([f]);
   const handleScannerUpload = (files: File[]) => handleAddFiles(files);
 
-  const removePhoto = (id: string) => {
-    setPhotos(prev => {
-      const p = prev.find(x => x.id === id);
-      if (p) URL.revokeObjectURL(p.previewUrl);
-      const next = prev.filter(x => x.id !== id);
-      if (next.length === 0) setSampleUsed(false); // unlock the shelf picker
-      return next;
-    });
+  const handleRemovePhoto = (id: string) => {
+    removeItem(id);
+    if (photos.length <= 1) setSampleUsed(false); // unlock the shelf picker
     if (filterPhotoId === id) setFilterPhotoId(null);
   };
 
@@ -251,38 +125,12 @@ export default function SnapScreen({ go, onSubmit }: SnapScreenProps) {
     setFilterPhotoId(prev => (prev === id ? null : id));
   };
 
-  const retryPhoto = (id: string) => {
-    setPhotos(prev => prev.map(x => x.id === id ? { ...x, status: 'pending', error: undefined } : x));
-  };
-
-  const removeDetected = (name: string) => {
-    setRemovedNames(s => {
-      const next = new Set(s);
-      next.add(name);
-      return next;
-    });
-  };
-
-  const handleSubmit = () => {
-    if (mergedDetected.length === 0) return;
-    // Sum vision usage across every photo that contributed. ProgressScreen
-    // adds in alias + storage costs from the SSE stream to produce a CAD
-    // total for the whole run.
-    const visionUsage = photos.reduce<UsageTotals>(
-      (acc, p) => (p.usage ? addUsage(acc, p.usage) : acc),
-      { ...EMPTY_USAGE }
-    );
-    // Always submit the merged unique set regardless of the current view filter.
-    onSubmit({ aisle: location, products: mergedDetected, visionUsage });
-    go('progress');
-  };
-
   const totalPhotos = photos.length;
-  const donePhotos = photos.filter(p => p.status === 'done').length;
-  const detectingCount = photos.filter(p => p.status === 'detecting' || p.status === 'pending').length;
-  const errorCount = photos.filter(p => p.status === 'error').length;
-  const anyDetecting = detectingCount > 0;
-  const canSubmit = mergedDetected.length > 0 && !anyDetecting;
+  const donePhotos = photos.filter(hasResult).length;
+  const savedCount = photos.filter(p => p.status === 'saved').length;
+  const detectingCount = photos.filter(p => p.status === 'detecting' || p.status === 'queued').length;
+  const errorCount = photos.filter(p => p.status === 'failed').length;
+  const anyDetecting = detectingCount > 0 || photos.some(p => p.status === 'saving');
 
   const currentShelf = getShelf(location);
   const filterIndex = filterPhotoId ? photos.findIndex(p => p.id === filterPhotoId) : -1;
@@ -294,13 +142,6 @@ export default function SnapScreen({ go, onSubmit }: SnapScreenProps) {
       : photos.length > 0
         ? photos[photos.length - 1].previewUrl
         : null;
-
-  const submitLabel = (() => {
-    if (totalPhotos === 0) return t('snap_save_first');
-    if (anyDetecting) return t('snap_save_busy', donePhotos, totalPhotos);
-    if (mergedDetected.length === 0) return errorCount > 0 ? t('snap_save_retry') : t('snap_save_nothing');
-    return t('snap_save_n', mergedDetected.length, location);
-  })();
 
   return (
     <div style={{ padding: '62px 20px 130px', fontFamily: FONT, color: C.text }}>
@@ -397,7 +238,10 @@ export default function SnapScreen({ go, onSubmit }: SnapScreenProps) {
                 const blob = await res.blob();
                 setLocation(SAMPLE_SHELF);
                 setSampleUsed(true);
-                handleAddFiles([new File([blob], 'sample-shelf.jpg', { type: blob.type || 'image/jpeg' })]);
+                void enqueuePhotos(
+                  [new File([blob], 'sample-shelf.jpg', { type: blob.type || 'image/jpeg' })],
+                  SAMPLE_SHELF
+                );
               } finally {
                 setSampleLoading(false);
               }
@@ -422,6 +266,28 @@ export default function SnapScreen({ go, onSubmit }: SnapScreenProps) {
             {t('snap_sample_b10')}
           </div>
         </>
+      )}
+
+      {/* Auto-save banner: the queue takes it from here — leaving is safe. */}
+      {totalPhotos > 0 && (
+        <div style={{
+          marginTop: 12, padding: '10px 12px',
+          background: C.accentTint, border: `1px solid ${C.border}`, borderRadius: 12,
+          display: 'flex', alignItems: 'flex-start', gap: 9,
+          fontSize: 13, fontWeight: 600, color: C.text, lineHeight: 1.45,
+        }}>
+          <Icon name="check" size={16} style={{ color: C.primaryDark, flexShrink: 0, marginTop: 1 }} />
+          <span>
+            {t('snap_autosave')}
+            {savedCount > 0 && (
+              <span style={{ color: C.primaryDark }}> {t('snap_saved_n', savedCount)}.</span>
+            )}
+            {' '}
+            <Link href="/admin/queue" style={{ color: C.primaryDark, fontWeight: 800 }}>
+              {t('snap_view_queue')} →
+            </Link>
+          </span>
+        </div>
       )}
 
       {/* Photo strip — horizontal scroll showing each queued photo + state.
@@ -456,7 +322,7 @@ export default function SnapScreen({ go, onSubmit }: SnapScreenProps) {
           </div>
 
           {/* Batch progress bar — real progress (done+failed)/total, with a
-              live sweep while any photo is still detecting so it never looks stuck. */}
+              live sweep while anything is in flight so it never looks stuck. */}
           <div style={{
             position: 'relative', height: 6, borderRadius: 3,
             background: C.bgMuted, overflow: 'hidden', marginBottom: 10,
@@ -486,8 +352,8 @@ export default function SnapScreen({ go, onSubmit }: SnapScreenProps) {
                 photo={p}
                 selected={p.id === filterPhotoId}
                 onSelect={togglePhotoFilter}
-                onRemove={removePhoto}
-                onRetry={retryPhoto}
+                onRemove={handleRemovePhoto}
+                onRetry={retryItem}
               />
             ))}
           </div>
@@ -603,31 +469,13 @@ export default function SnapScreen({ go, onSubmit }: SnapScreenProps) {
                   </div>
                 )}
               </div>
-              <button onClick={() => removeDetected(d.name)} style={{
-                border: 'none', background: 'transparent', cursor: 'pointer',
-                color: C.textMuted, padding: 4, display: 'flex',
-                alignItems: 'center', flexShrink: 0,
-              }} aria-label={`Remove ${d.name}`}>
-                <Icon name="x" size={16} />
-              </button>
             </div>
           ))}
         </div>
       )}
 
-      <button onClick={handleSubmit} disabled={!canSubmit} style={{
-        width: '100%', marginTop: 22, padding: '17px 0',
-        background: canSubmit ? C.primary : C.bgMuted, color: canSubmit ? C.text : C.textSoft, border: `2px solid ${C.border}`, borderRadius: 16,
-        fontFamily: FONT, fontSize: 17, fontWeight: 800,
-        cursor: canSubmit ? 'pointer' : 'not-allowed',
-        boxShadow: canSubmit ? SHADOW : 'none',
-        transition: 'background .2s',
-      }}>
-        {submitLabel}
-      </button>
-
       <div style={{
-        marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        marginTop: 22, display: 'flex', alignItems: 'center', justifyContent: 'center',
         gap: 8, color: C.textMuted, fontSize: 13.5,
       }}>
         <BearFace size={30} />
@@ -640,32 +488,38 @@ export default function SnapScreen({ go, onSubmit }: SnapScreenProps) {
 function PhotoChip({
   photo, selected, onSelect, onRemove, onRetry,
 }: {
-  photo: PhotoState;
+  photo: QueueItem;
   selected: boolean;
   onSelect: (id: string) => void;
   onRemove: (id: string) => void;
   onRetry: (id: string) => void;
 }) {
-  // Done but zero items — Gemini sometimes returns [] even on good shots.
-  // Treat it like a recoverable failure so the worker can retry.
-  const isZeroResult = photo.status === 'done' && photo.products.length === 0;
+  // Detected but zero items — Gemini sometimes returns [] even on good shots.
+  // The pump parks it as failed shortly; either way, offer retry.
+  const isZeroResult = hasResult(photo) && photo.products.length === 0;
+  const isFailed = photo.status === 'failed';
+  const inFlight = photo.status === 'queued' || photo.status === 'detecting' || photo.status === 'saving';
 
   const badge =
-    photo.status === 'error' ? '!' :
+    isFailed ? '!' :
     photo.status === 'detecting' ? '…' :
-    photo.status === 'done' ? `${photo.products.length}` :
+    photo.status === 'saving' ? '↑' :
+    photo.status === 'saved' ? '✓' :
+    photo.status === 'detected' ? `${photo.products.length}` :
     '⏳';
 
   const badgeColor =
-    photo.status === 'error' || isZeroResult ? '#c33' :
-    photo.status === 'detecting' ? C.accent :
-    photo.status === 'done' ? C.primary :
+    isFailed || isZeroResult ? '#c33' :
+    photo.status === 'detecting' || photo.status === 'saving' ? C.accent :
+    photo.status === 'saved' ? '#8fd3a8' :
+    photo.status === 'detected' ? C.primary :
     C.textMuted;
 
-  // The chip itself is the tap target for filtering. The small × button
-  // sits on top and stops propagation so removing doesn't also try to filter.
+  // The chip itself is the tap target for filtering. The small corner button
+  // sits on top and stops propagation; it's hidden while a request is in
+  // flight (removal mid-request belongs to the queue page).
   const handleChipTap = () => {
-    if (photo.status === 'done') onSelect(photo.id);
+    if (hasResult(photo)) onSelect(photo.id);
   };
 
   return (
@@ -678,7 +532,7 @@ function PhotoChip({
         background: 'transparent', padding: 0,
         border: selected ? `2.5px solid ${C.primary}` : '2.5px solid transparent',
         borderRadius: 13,
-        cursor: photo.status === 'done' ? 'pointer' : 'default',
+        cursor: hasResult(photo) ? 'pointer' : 'default',
         boxShadow: selected ? `0 4px 12px ${C.primary}44` : 'none',
         transition: 'border-color .15s, box-shadow .15s',
       }}
@@ -690,11 +544,11 @@ function PhotoChip({
         style={{
           width: '100%', height: '100%', objectFit: 'cover',
           borderRadius: 9, border: `1px solid ${C.border}`,
-          opacity: photo.status === 'error' ? 0.5 : 1,
+          opacity: isFailed ? 0.5 : 1,
           display: 'block',
         }}
       />
-      {photo.status === 'detecting' && (
+      {(photo.status === 'detecting' || photo.status === 'saving') && (
         <div style={{
           position: 'absolute', left: 5, right: 5, bottom: 5,
           height: 4, borderRadius: 2,
@@ -719,26 +573,28 @@ function PhotoChip({
       }}>
         {badge}
       </div>
-      <span
-        role="button"
-        tabIndex={0}
-        onClick={(e) => {
-          e.stopPropagation();
-          if (photo.status === 'error' || isZeroResult) onRetry(photo.id);
-          else onRemove(photo.id);
-        }}
-        style={{
-          position: 'absolute', top: 2, right: 2,
-          width: 22, height: 22,
-          background: 'rgba(255,255,255,0.92)', border: `1px solid ${C.border}`,
-          borderRadius: '50%', cursor: 'pointer',
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          padding: 0,
-        }}
-        aria-label={(photo.status === 'error' || isZeroResult) ? 'Retry' : 'Remove photo'}
-      >
-        <Icon name={(photo.status === 'error' || isZeroResult) ? 'search' : 'x'} size={11} style={{ color: C.text }} />
-      </span>
+      {!inFlight && (
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (isFailed || isZeroResult) onRetry(photo.id);
+            else onRemove(photo.id);
+          }}
+          style={{
+            position: 'absolute', top: 2, right: 2,
+            width: 22, height: 22,
+            background: 'rgba(255,255,255,0.92)', border: `1px solid ${C.border}`,
+            borderRadius: '50%', cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            padding: 0,
+          }}
+          aria-label={(isFailed || isZeroResult) ? 'Retry' : 'Remove photo'}
+        >
+          <Icon name={(isFailed || isZeroResult) ? 'search' : 'x'} size={11} style={{ color: C.text }} />
+        </span>
+      )}
     </button>
   );
 }

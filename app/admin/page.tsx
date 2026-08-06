@@ -1,9 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { C, FONT, SHADOW } from '@/lib/theme';
-import SnapScreen, { SnapPayload } from '@/components/SnapScreen';
-import ProgressScreen from '@/components/ProgressScreen';
+import SnapScreen from '@/components/SnapScreen';
 import FindScreen from '@/components/FindScreen';
 import ShelfAdmin from '@/components/ShelfAdmin';
 import PasscodeGate from '@/components/PasscodeGate';
@@ -11,11 +11,14 @@ import BearFace from '@/components/BearFace';
 import Icon from '@/components/Icon';
 import LanguageToggle from '@/components/LanguageToggle';
 import { useTranslation } from '@/lib/i18n';
+import { STAFF_PASSCODE, STAFF_UNLOCK_KEY } from '@/lib/staff-gate';
 
 // Workspace-level screens. The "menu" is the staff landing page; the rest are
 // the add/manage/test flows that used to live on the public home screen.
-type AdminScreen = 'menu' | 'snap' | 'progress' | 'find' | 'shelves';
-// Vocabulary the shared child components (Snap/Progress/Find) speak.
+// 'progress' is gone: the scan queue auto-saves each photo, so there is no
+// submit-then-watch step anymore.
+type AdminScreen = 'menu' | 'snap' | 'find' | 'shelves';
+// Vocabulary the shared child components (Snap/Find) speak.
 type ChildScreen = 'home' | 'snap' | 'progress' | 'find';
 
 // Small dashed "pill" used for secondary tools (Shelf admin, DB debug, exit).
@@ -64,12 +67,12 @@ function MenuCard({
 export default function AdminWorkspace() {
   const { t, lang } = useTranslation();
   const [screen, setScreen] = useState<AdminScreen>('menu');
-  const [snapPayload, setSnapPayload] = useState<SnapPayload | null>(null);
 
-  // Snap/Progress/Find call go('home') to back out. In the workspace that
-  // returns to the staff menu; snap/progress/find map 1:1.
+  // Snap/Find call go('home') to back out. In the workspace that returns to
+  // the staff menu. A legacy go('progress') (nothing emits it anymore) also
+  // lands on the menu.
   const childGo = (s: ChildScreen) => {
-    setScreen(s === 'home' ? 'menu' : s);
+    setScreen(s === 'home' || s === 'progress' ? 'menu' : s);
   };
 
   const content = (() => {
@@ -77,15 +80,11 @@ export default function AdminWorkspace() {
       return <ShelfAdmin onBack={() => setScreen('menu')} />;
     }
 
-    if (screen === 'snap' || screen === 'progress' || screen === 'find') {
-      const childBg = screen === 'progress' ? C.bgMuted : C.bg;
-      const node =
-        screen === 'snap' ? <SnapScreen go={childGo} onSubmit={setSnapPayload} />
-        : screen === 'progress' ? <ProgressScreen go={childGo} payload={snapPayload} />
-        : <FindScreen go={childGo} />;
+    if (screen === 'snap' || screen === 'find') {
+      const node = screen === 'snap' ? <SnapScreen go={childGo} /> : <FindScreen go={childGo} />;
       return (
-        <div style={{ minHeight: '100dvh', background: childBg }}>
-          <div key={screen} style={{ minHeight: '100dvh', background: childBg, animation: 'fade .25s ease' }}>
+        <div style={{ minHeight: '100dvh', background: C.bg }}>
+          <div key={screen} style={{ minHeight: '100dvh', background: C.bg, animation: 'fade .25s ease' }}>
             {node}
           </div>
         </div>
@@ -140,21 +139,25 @@ export default function AdminWorkspace() {
             />
           </div>
 
-          {/* Secondary tools — small dashed pills with line icons (matches the
-              app's icon set instead of platform emoji). */}
+          {/* Secondary tools — small dashed pills with line icons. Cross-page
+              links use next/link so client-side navigation keeps the scan
+              queue's JS context (and in-flight uploads) alive. */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 18 }}>
             <button onClick={() => setScreen('shelves')} style={pillStyle}>
               <Icon name="map" size={14} /> {t('admin_manage_title')}
             </button>
-            <a href="/dashboard" style={pillStyle}>
+            <Link href="/admin/queue" style={pillStyle}>
+              <Icon name="clock" size={14} /> {t('admin_queue_title')}
+            </Link>
+            <Link href="/dashboard" style={pillStyle}>
               <Icon name="bars" size={14} /> {t('admin_dashboard')}
-            </a>
-            <a href="/searchlog" style={pillStyle}>
+            </Link>
+            <Link href="/searchlog" style={pillStyle}>
               <Icon name="clock" size={14} /> {t('admin_searchlog')}
-            </a>
-            <a href="/" style={pillStyle}>
+            </Link>
+            <Link href="/" style={pillStyle}>
               <Icon name="home" size={14} /> {t('admin_customer_view')}
-            </a>
+            </Link>
           </div>
         </div>
       </div>
@@ -162,7 +165,7 @@ export default function AdminWorkspace() {
   })();
 
   return (
-    <PasscodeGate passcode="2627" storageKey="wherebear:staff-unlocked" cancelHref="/">
+    <PasscodeGate passcode={STAFF_PASSCODE} storageKey={STAFF_UNLOCK_KEY} cancelHref="/">
       {content}
     </PasscodeGate>
   );

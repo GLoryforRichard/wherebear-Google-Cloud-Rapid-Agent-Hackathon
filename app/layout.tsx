@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import StaleClientGuard from "@/components/StaleClientGuard";
+import QueueBoot from "@/components/QueueBoot";
+import GlobalScanIndicator from "@/components/GlobalScanIndicator";
 
 // Wherebear 3.0 "Gumroad" direction — Space Grotesk (geometric, neo-brutalist).
 const spaceGrotesk = Space_Grotesk({
@@ -30,7 +32,9 @@ export default function RootLayout({
     <html lang="en" className={`${spaceGrotesk.variable} h-full`}>
       <body className="min-h-full" style={{ fontFamily: 'var(--font-space), -apple-system, system-ui, sans-serif' }}>
         <StaleClientGuard />
+        <QueueBoot />
         {children}
+        <GlobalScanIndicator />
       </body>
     </html>
   );

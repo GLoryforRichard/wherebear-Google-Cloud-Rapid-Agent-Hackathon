@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState, useCallback } from 'react';
 import { C, FONT } from '@/lib/theme';
 
@@ -47,7 +48,7 @@ export default function DashboardPage() {
   return (
     <div style={{ minHeight: '100dvh', background: C.bg, color: C.text, fontFamily: FONT, padding: '60px 18px 60px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-        <a href="/admin" style={{ color: C.primary, textDecoration: 'none', fontSize: 14, fontWeight: 600 }}>← Workspace</a>
+        <Link href="/admin" style={{ color: C.primary, textDecoration: 'none', fontSize: 14, fontWeight: 600 }}>← Workspace</Link>
         <button onClick={load} style={{
           background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8,
           padding: '4px 12px', fontSize: 12.5, fontWeight: 600, color: C.textMuted,

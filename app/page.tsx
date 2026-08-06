@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { C, FONT, SHADOW } from '@/lib/theme';
 import FindScreen from '@/components/FindScreen';
 import AnimatedBear from '@/components/AnimatedBear';
@@ -166,7 +167,7 @@ export default function Page() {
         {/* Staff entry → /admin. Deliberately prominent, with the demo
             passcode printed right here so judges never hit a dead end. */}
         <div style={{ marginTop: 30 }}>
-          <a href="/admin" style={{
+          <Link href="/admin" style={{
             width: '100%', boxSizing: 'border-box',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9,
             padding: '15px 18px', background: C.white, border: `2px solid ${C.border}`,
@@ -175,7 +176,7 @@ export default function Page() {
           }}>
             <Icon name="settings" size={19} /> {t('staff_entry')}
             <Icon name="chevron-right" size={18} style={{ color: C.textMuted }} />
-          </a>
+          </Link>
           <div style={{
             marginTop: 8, textAlign: 'center',
             fontSize: 12.5, color: C.textMuted, fontWeight: 600, lineHeight: 1.4,

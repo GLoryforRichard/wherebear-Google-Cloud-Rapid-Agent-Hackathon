@@ -5,9 +5,23 @@ import { C, FONT, SHADOW } from '@/lib/theme';
 import BearFace from './BearFace';
 import Icon from './Icon';
 import ScreenHeader from './ScreenHeader';
-import { SnapPayload } from './SnapScreen';
+import type { DetectedProduct } from '@/lib/gemini';
+import type { UsageTotals } from '@/lib/cost';
 import { AgentEvent } from '@/lib/agents/types';
 import { useTranslation } from '@/lib/i18n';
+
+/**
+ * NO LONGER ROUTED — the scan queue (lib/scan-queue) auto-saves each photo,
+ * so the submit-then-watch step this screen rendered is gone. Retained as
+ * the reference implementation of SSE draining + verifyServerSideSave
+ * reconciliation (the queue's pump uses the same patterns).
+ */
+export interface SnapPayload {
+  aisle: string;
+  products: DetectedProduct[];
+  /** Sum of usage across every vision call that contributed products. */
+  visionUsage: UsageTotals;
+}
 
 type Screen = 'home' | 'snap' | 'progress' | 'find';
 
