@@ -9,7 +9,9 @@ export const runtime = 'nodejs';
 // a wider window than the old 60s ceiling.
 export const maxDuration = 120;
 
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+// 20 MB matches whataisle's vision-test limit — modern phone photos can
+// exceed 8 MB, and the pipeline downscales before the model sees anything.
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 
 export async function POST(req: NextRequest) {
   // Captured up here so the failure log in `catch` can describe the request
@@ -29,7 +31,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'No image file provided' }, { status: 400 });
     }
     if (file.size > MAX_IMAGE_BYTES) {
-      return NextResponse.json({ ok: false, error: 'Image is too large. Use a photo under 8 MB.' }, { status: 413 });
+      return NextResponse.json({ ok: false, error: 'Image is too large. Use a photo under 20 MB.' }, { status: 413 });
     }
     if (file.type && (!file.type.startsWith('image/') || file.type === 'image/svg+xml')) {
       return NextResponse.json({ ok: false, error: 'Please upload a photo file.' }, { status: 400 });

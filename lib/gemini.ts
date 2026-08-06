@@ -478,7 +478,8 @@ async function stage1DetectBoxes(
   imageBase64: string,
   mimeType: string,
   shelfContext?: string,
-  extraNudge?: string
+  extraNudge?: string,
+  model: string = VISION_MODEL
 ): Promise<{ boxes: DetectedBox[]; usage: Partial<UsageTotals> }> {
   const base = shelfContext
     ? `${STAGE1_DETECTION_PROMPT}\n\nShelf hint: ${shelfContext}\nUse the hint to skip clearly off-category items, but only report what you actually see.`
@@ -488,7 +489,7 @@ async function stage1DetectBoxes(
   // Hedged: DSQ sometimes parks a call for 60+ s with no 429 — a duplicate
   // fired at 15 s routinely lands in normal time (~12 s).
   const result = await generateContentWithHedge({
-    model: VISION_MODEL,
+    model,
     contents: [
       {
         role: 'user',
@@ -638,7 +639,8 @@ async function stage2IdentifyBatch(
   cropsBase64: string[],
   shelfContext: string | undefined,
   globalOffset: number,
-  totalCrops: number
+  totalCrops: number,
+  model: string = VISION_MODEL
 ): Promise<{ identified: IdentifiedCrop[]; usage: Partial<UsageTotals> }> {
   if (cropsBase64.length === 0) return { identified: [], usage: {} };
 
@@ -657,7 +659,7 @@ async function stage2IdentifyBatch(
   // Hedged like Stage 1 — a parked batch call was turning 10-s Stage 2 runs
   // into 2-minute ones. The duplicate only fires on the pathological tail.
   const result = await generateContentWithHedge({
-    model: VISION_MODEL,
+    model,
     contents: [{ role: 'user', parts }],
     config: {
       responseMimeType: 'application/json',
@@ -683,13 +685,14 @@ async function stage2IdentifyBatch(
 
 async function stage2IdentifyCrops(
   cropsBase64: string[],
-  shelfContext?: string
+  shelfContext?: string,
+  model: string = VISION_MODEL
 ): Promise<{ identified: IdentifiedCrop[]; usage: UsageTotals }> {
   if (cropsBase64.length === 0) return { identified: [], usage: { ...EMPTY_USAGE } };
 
   // Single batch — no point spinning up the parallel machinery.
   if (cropsBase64.length <= STAGE2_MAX_CROPS_PER_CALL) {
-    const single = await stage2IdentifyBatch(cropsBase64, shelfContext, 0, cropsBase64.length);
+    const single = await stage2IdentifyBatch(cropsBase64, shelfContext, 0, cropsBase64.length, model);
     return {
       identified: single.identified,
       usage: addUsage({ ...EMPTY_USAGE }, single.usage),
@@ -708,7 +711,7 @@ async function stage2IdentifyCrops(
 
   const settled = await Promise.allSettled(
     batches.map(b =>
-      stage2IdentifyBatch(b.crops, shelfContext, b.offset, cropsBase64.length)
+      stage2IdentifyBatch(b.crops, shelfContext, b.offset, cropsBase64.length, model)
     )
   );
 
@@ -739,7 +742,10 @@ export async function detectAndIdentifyProducts(
   imageBuffer: Buffer,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _mimeType: string = 'image/jpeg',
-  shelfContext?: string
+  shelfContext?: string,
+  /** Model override (e.g. the /compare page runs this same pipeline on
+   *  gemini-3.6-flash without touching the main app's VISION_MODEL). */
+  model: string = VISION_MODEL
 ): Promise<{ products: DetectedProduct[]; usage: UsageTotals }> {
   const usage: UsageTotals = { ...EMPTY_USAGE };
   // iPhone JPEGs store landscape pixels + an EXIF Orientation tag — viewers
@@ -779,7 +785,7 @@ export async function detectAndIdentifyProducts(
   // Stage 1 — detect boxes from downsized shelf photo.
   const t0 = Date.now();
   const stage1Base64 = stage1Buffer.toString('base64');
-  const stage1Result = await stage1DetectBoxes(stage1Base64, 'image/jpeg', shelfContext);
+  const stage1Result = await stage1DetectBoxes(stage1Base64, 'image/jpeg', shelfContext, undefined, model);
   let boxes = stage1Result.boxes;
   Object.assign(usage, addUsage(usage, stage1Result.usage));
 
@@ -793,7 +799,8 @@ export async function detectAndIdentifyProducts(
       stage1Base64,
       'image/jpeg',
       shelfContext,
-      'There ARE products visible on this shelf — your previous answer was empty. Look again carefully. Return at least every clearly visible package.'
+      'There ARE products visible on this shelf — your previous answer was empty. Look again carefully. Return at least every clearly visible package.',
+      model
     );
     boxes = retry.boxes;
     Object.assign(usage, addUsage(usage, retry.usage));
@@ -860,7 +867,8 @@ export async function detectAndIdentifyProducts(
   // Stage 2 — batch identify all crops in one call.
   const stage2Result = await stage2IdentifyCrops(
     indexedCrops.map(c => c.crop.visionBase64),
-    shelfContext
+    shelfContext,
+    model
   );
   const identified = stage2Result.identified;
   Object.assign(usage, addUsage(usage, stage2Result.usage));
