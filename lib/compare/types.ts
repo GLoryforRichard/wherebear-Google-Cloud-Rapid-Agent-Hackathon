@@ -67,6 +67,8 @@ export interface CompareRunResult {
   /** Browser-displayable JPEG data URL of the (HEIC-converted, upright)
    *  uploaded photo — the overlay base image. Filled in by the route. */
   previewImage?: string;
+  /** Per-stage wall times (ms), for latency debugging on the page. */
+  stages?: Record<string, number>;
   error?: string;
 }
 

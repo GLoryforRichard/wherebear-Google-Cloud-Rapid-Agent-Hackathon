@@ -21,6 +21,7 @@ import {
   ROW_DETECT_PROMPT,
   ROWS_SCHEMA,
 } from './prompts';
+import { type RawImage, extractFromRaw } from './raw';
 import type { Band, NormalizedBox, ParseInfo, PreparedImage } from './types';
 
 /**
@@ -64,7 +65,8 @@ export interface RowBandsResult {
 export async function detectRowBands(
   callModel: CallModelFn,
   rowModelId: string,
-  processed: PreparedImage
+  processed: PreparedImage,
+  hedgeAfterMs?: number
 ): Promise<RowBandsResult> {
   const fallbackBands = buildBands([]);
   const outcome = await callModel({
@@ -74,6 +76,7 @@ export async function detectRowBands(
     schema: ROWS_SCHEMA,
     schemaName: 'shelf_rows',
     timeoutMs: 120_000,
+    hedgeAfterMs,
   });
   if (!outcome.ok) {
     return {
@@ -114,6 +117,11 @@ export interface DetectOptions {
   /** 'low' = fast path; omit for full reasoning (the champion setting). */
   reasoningEffort?: 'low';
   bandConcurrency?: number;
+  /** Tail-latency hedge for band calls (see CallModelOptions.hedgeAfterMs). */
+  bandHedgeMs?: number;
+  /** Pre-decoded full-image pixels; band slices extract from this instead of
+   *  re-decoding the full-res JPEG per band. Pixels are identical. */
+  raw?: RawImage;
 }
 
 export interface DetectResult {
@@ -148,13 +156,14 @@ export async function detectBoxes(
     bands.map(async (b) => {
       const top = Math.round(b.y0 * full.height);
       const height = Math.max(1, Math.round((b.y1 - b.y0) * full.height));
-      const buf = await sharp(full.jpeg)
-        .extract({
-          left: 0,
-          top: Math.min(top, full.height - 1),
-          width: full.width,
-          height: Math.min(height, full.height - top),
-        })
+      const rect = {
+        left: 0,
+        top: Math.min(top, full.height - 1),
+        width: full.width,
+        height: Math.min(height, full.height - top),
+      };
+      const source = opts.raw ? extractFromRaw(opts.raw, rect) : sharp(full.jpeg).extract(rect);
+      const buf = await source
         .resize(MAX_BAND_SIDE, MAX_BAND_SIDE, {
           fit: 'inside',
           withoutEnlargement: true,
@@ -182,6 +191,7 @@ export async function detectBoxes(
         // Explicit, and matched to the sibling calls. Bands measure ~31s in
         // practice; a hung call must not outlive the whole request.
         timeoutMs: 120_000,
+        hedgeAfterMs: opts.bandHedgeMs,
       });
     const attempts: CallOutcome[] = [];
     let parsed: ReturnType<typeof parseBoxes> | null = null;
@@ -200,6 +210,10 @@ export async function detectBoxes(
   );
   const latencyMs = Math.round(performance.now() - started);
   const allAttempts = bandResults.flatMap((r) => r.attempts);
+  console.log(
+    `[scan] band latencies (${modelId}): ` +
+    bandResults.map((r) => r.attempts.map((a) => `${Math.round(a.latencyMs / 100) / 10}s`).join('+')).join(' ')
+  );
 
   const failed = bandResults
     .map((r, i) => {

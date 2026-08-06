@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
 import { runWherebearParadigm } from '@/lib/compare/run-wherebear';
-import { runWhatAisleParadigm } from '@/lib/compare/run-whataisle';
+import { prewarmScan, runWhatAisleParadigm } from '@/lib/compare/run-whataisle';
 import { heicToJpeg, sniffHeic } from '@/lib/scan/image';
 import { CompareParadigm, CompareRunResult } from '@/lib/compare/types';
 
@@ -36,14 +36,37 @@ function convertHeicShared(heic: Buffer): Promise<Buffer> {
   return pending;
 }
 
+/** Browser-displayable preview for the overlay base image (the client may
+ *  have uploaded a HEIC it cannot render itself). Upright (EXIF applied),
+ *  same coordinate space as every paradigm's boxes. Shared across the three
+ *  concurrent paradigm requests by content hash. */
+const previewCache = new Map<string, Promise<string>>();
+
+function previewShared(jpeg: Buffer): Promise<string> {
+  const key = createHash('sha1').update(jpeg).digest('hex');
+  let pending = previewCache.get(key);
+  if (!pending) {
+    pending = sharp(jpeg)
+      .rotate()
+      .resize(1280, 1280, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 80 })
+      .toBuffer()
+      .then((buf) => `data:image/jpeg;base64,${buf.toString('base64')}`);
+    previewCache.set(key, pending);
+    pending.catch(() => previewCache.delete(key));
+    setTimeout(() => previewCache.delete(key), 5 * 60_000).unref();
+  }
+  return pending;
+}
+
 export async function POST(req: NextRequest) {
-  let paradigm: CompareParadigm | undefined;
+  let paradigm: CompareParadigm | 'prepare' | undefined;
   try {
     const formData = await req.formData();
     const file = formData.get('image');
-    const p = (formData.get('paradigm') as string | null)?.trim() as CompareParadigm;
+    const p = (formData.get('paradigm') as string | null)?.trim() as CompareParadigm | 'prepare';
 
-    if (!VALID_PARADIGMS.includes(p)) {
+    if (p !== 'prepare' && !VALID_PARADIGMS.includes(p)) {
       return NextResponse.json(
         { ok: false, error: `paradigm must be one of ${VALID_PARADIGMS.join(', ')}` },
         { status: 400 }
@@ -80,23 +103,22 @@ export async function POST(req: NextRequest) {
       buffer = await convertHeicShared(buffer);
     }
 
-    // Browser-displayable preview for the overlay base image (the client may
-    // have uploaded a HEIC it cannot render itself). Upright (EXIF applied),
-    // same coordinate space as every paradigm's boxes.
-    const previewJpeg = await sharp(buffer)
-      .rotate()
-      .resize(1280, 1280, { fit: 'inside', withoutEnlargement: true })
-      .jpeg({ quality: 80 })
-      .toBuffer();
-    const previewImage = `data:image/jpeg;base64,${previewJpeg.toString('base64')}`;
+    // Prewarm: fired by the client the moment a file is picked, so HEIC
+    // conversion, resize, raw decode, and the preview are all cached by the
+    // time the user clicks Run and the three paradigm requests land.
+    if (p === 'prepare') {
+      await Promise.all([prewarmScan(buffer), previewShared(buffer)]);
+      return NextResponse.json({ ok: true, prepared: true });
+    }
 
+    const previewPromise = previewShared(buffer);
     let result: CompareRunResult;
     if (p === 'wherebear') {
       result = await runWherebearParadigm(buffer, mimeType);
     } else {
       result = await runWhatAisleParadigm(buffer, mimeType, p);
     }
-    result.previewImage = previewImage;
+    result.previewImage = await previewPromise;
 
     return NextResponse.json(result);
   } catch (err) {
