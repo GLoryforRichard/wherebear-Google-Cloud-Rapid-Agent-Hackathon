@@ -50,38 +50,9 @@ export interface CallModelOptions {
    * full reasoning.
    */
   reasoningEffort?: 'low' | 'medium' | 'high' | 'off';
-  /**
-   * Tail-latency hedge: if the call hasn't settled after this many ms, fire
-   * a duplicate and take whichever finishes first. Same inputs → same
-   * accuracy; it only rescues the provider's latency tail (Vertex has been
-   * observed serving identical requests anywhere from 18s to 150s+). Costs
-   * a duplicate call's tokens only when the hedge actually fires.
-   */
-  hedgeAfterMs?: number;
 }
 
 export type CallModelFn = (opts: CallModelOptions) => Promise<CallOutcome>;
-
-/** Race a duplicate call against a slow first attempt. CallOutcome never
- *  rejects (failures come back as ok:false), so a plain race is safe: a fast
- *  failure returns immediately and the caller's own retry logic engages. */
-async function withHedge(
-  opts: CallModelOptions,
-  once: (o: CallModelOptions) => Promise<CallOutcome>
-): Promise<CallOutcome> {
-  const { hedgeAfterMs, ...rest } = opts;
-  if (!hedgeAfterMs) return once(rest);
-  const first = once(rest);
-  const timedOut = Symbol('hedge');
-  const raced = await Promise.race([
-    first,
-    new Promise<typeof timedOut>((r) => setTimeout(() => r(timedOut), hedgeAfterMs)),
-  ]);
-  if (raced !== timedOut) return raced;
-  console.warn(`[scan] call still pending after ${hedgeAfterMs}ms — firing hedge duplicate`);
-  const second = once(rest);
-  return Promise.race([first, second]);
-}
 
 // ── Vertex AI transport ──────────────────────────────────────────────────
 
@@ -92,9 +63,7 @@ const THINKING_LEVEL: Record<NonNullable<CallModelOptions['reasoningEffort']>, T
   high: ThinkingLevel.HIGH,
 };
 
-export const callModelVertex: CallModelFn = (opts) => withHedge(opts, callVertexOnce);
-
-const callVertexOnce = async (opts: CallModelOptions): Promise<CallOutcome> => {
+export const callModelVertex: CallModelFn = async (opts) => {
   const {
     modelId,
     imageJpeg,
@@ -225,10 +194,7 @@ function openRouterKey(): string {
  * bursts) surface as a thrown fetch — retry those once before giving up.
  * Transient 429/502/503 get exponential backoff on top.
  */
-export const callModelOpenRouter: CallModelFn = (opts) =>
-  withHedge(opts, callOpenRouterWithRetry);
-
-const callOpenRouterWithRetry = async (opts: CallModelOptions): Promise<CallOutcome> => {
+export const callModelOpenRouter: CallModelFn = async (opts) => {
   return orGlobalLimit(async () => {
     let outcome = await callOpenRouterOnce(opts);
     if (!outcome.ok && outcome.error?.startsWith('network:')) {
