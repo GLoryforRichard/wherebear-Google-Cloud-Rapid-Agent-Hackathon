@@ -9,9 +9,10 @@
  * scope, so navigation anywhere in the app never interrupts it; a reload
  * re-enters through restoreFromOutbox.
  *
- * Concurrency: DETECT_CONCURRENCY=2 (the old SnapScreen cap — more
- * in-flight photos caused server-side 429 storms; the server also gates
- * Gemini process-wide). Saves are cheap and chain inside the pump loop.
+ * Concurrency: DETECT_CONCURRENCY=1 — /api/vision runs the rows-hd
+ * pipeline, which fans out up to 8 Vertex calls per photo server-side, so
+ * photos go through detection one at a time (the server enforces the same
+ * limit). Saves are cheap and chain inside the pump loop.
  *
  * Retry engine (new over the whataisle-store port, which shipped the
  * `attempts` field but never used it): transient failures — network drops,
@@ -43,7 +44,12 @@ import {
   updateItem,
 } from './store';
 
-const DETECT_CONCURRENCY = 2;
+// 1, not the old 2: /api/vision now runs the rows-hd pipeline, which fans
+// out up to 8 Vertex calls per photo server-side. Photos go through the
+// pipeline serially (the server enforces this too, lib/scan/intake.ts) so
+// the process-wide Gemini gate is never oversubscribed — queueing under the
+// per-call abort timers is an accuracy hazard, not just a slowdown.
+const DETECT_CONCURRENCY = 1;
 /** Tries per stage, counting the first one. */
 const MAX_ATTEMPTS = 3;
 /** Backoff before auto-retry attempt 2 and 3. */

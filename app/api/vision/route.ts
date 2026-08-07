@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { detectAndIdentifyProducts } from '@/lib/gemini';
-import { buildShelfContext } from '@/lib/shelves';
+import { runShelfIntake } from '@/lib/scan/intake';
 import { logOp } from '@/lib/ops';
 
 export const runtime = 'nodejs';
-// Two-stage pipeline: 1× detect call + 1× batch-identify call. Identify can
-// take longer than a single-shot run when there are many crops, so give it
-// a wider window than the old 60s ceiling.
-export const maxDuration = 120;
+// rows-hd pipeline: rows call + up to 8 band calls (with one serial retry
+// layer) + grid readout. Typical run is 60-120s; one full band-retry wave
+// ≈ 240s. 300 keeps margin while staying at the browser's ~300s fetch
+// ceiling. (Self-hosted Next doesn't enforce this — documented intent.)
+export const maxDuration = 300;
 
 // 20 MB matches whataisle's vision-test limit — modern phone photos can
 // exceed 8 MB, and the pipeline downscales before the model sees anything.
@@ -38,10 +38,13 @@ export async function POST(req: NextRequest) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const mimeType = file.type || 'image/jpeg';
 
-    const shelfContext = aisle ? buildShelfContext(aisle) : undefined;
-    const { products, usage } = await detectAndIdentifyProducts(buffer, mimeType, shelfContext);
+    // rows-hd takes no shelf hint — its prompts stay byte-identical to the
+    // benchmark champion. The `aisle` form field is still parsed above for
+    // the failure log; the queue client uses its own copy for the save.
+    // prepareScanImages sniffs HEIC from bytes, so iPhone gallery uploads
+    // work without a mime hint.
+    const { products, usage } = await runShelfIntake(buffer);
 
     await logOp('snap', usage);
 
@@ -49,7 +52,6 @@ export async function POST(req: NextRequest) {
       ok: true,
       count: products.length,
       products,
-      aisle_hint: shelfContext,
       usage,
     });
   } catch (err) {
