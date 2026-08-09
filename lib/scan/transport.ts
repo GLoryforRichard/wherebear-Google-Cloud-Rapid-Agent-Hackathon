@@ -63,27 +63,81 @@ const THINKING_LEVEL: Record<NonNullable<CallModelOptions['reasoningEffort']>, T
   high: ThinkingLevel.HIGH,
 };
 
-export const callModelVertex: CallModelFn = async (opts) => {
-  const {
-    modelId,
-    imageJpeg,
-    prompt,
-    schema,
-    // Below every route budget that reaches this, so a caller that forgets to
-    // pass one cannot outlive its own request.
-    timeoutMs = 60_000,
-    reasoningEffort,
-  } = opts;
-
+/** Model config shared by the standard and flex Vertex transports. */
+export function buildVertexConfig(opts: CallModelOptions): Record<string, unknown> {
   const config: Record<string, unknown> = {
     temperature: 0,
     maxOutputTokens: 16_000,
     responseMimeType: 'application/json',
   };
-  if (schema) config.responseJsonSchema = schema;
-  if (reasoningEffort) {
-    config.thinkingConfig = { thinkingLevel: THINKING_LEVEL[reasoningEffort] };
+  if (opts.schema) config.responseJsonSchema = opts.schema;
+  if (opts.reasoningEffort) {
+    config.thinkingConfig = { thinkingLevel: THINKING_LEVEL[opts.reasoningEffort] };
   }
+  return config;
+}
+
+/** The one-image-one-prompt content shape every scan call uses. */
+export function vertexContents(prompt: string, imageJpeg: Buffer) {
+  return [
+    {
+      role: 'user',
+      parts: [
+        { text: prompt },
+        { inlineData: { mimeType: 'image/jpeg', data: imageJpeg.toString('base64') } },
+      ],
+    },
+  ];
+}
+
+/**
+ * SDK response → CallOutcome: usage extraction, tier-aware cost estimate,
+ * and empty-completion detection (model burned its whole budget thinking —
+ * billed, zero output — must fail so callers' retry paths engage).
+ */
+export function vertexOutcomeFromResponse(
+  response: Awaited<ReturnType<typeof generateContentWithRetry>>,
+  latencyMs: number,
+  modelId: string,
+  tier: 'standard' | 'flex' = 'standard'
+): CallOutcome {
+  const meta = response.usageMetadata;
+  const tokens = meta
+    ? {
+        prompt: meta.promptTokenCount ?? 0,
+        completion: meta.candidatesTokenCount ?? 0,
+        reasoning: meta.thoughtsTokenCount ?? 0,
+      }
+    : null;
+  const costUsd = estimateCostUsd(modelId, tokens, { tier });
+  const generationId = response.responseId ?? null;
+
+  const text = response.text ?? '';
+  if (!text.trim()) {
+    return {
+      ok: false,
+      rawText: null,
+      latencyMs,
+      costUsd,
+      tokens,
+      generationId,
+      error: 'empty completion (model produced no output)',
+    };
+  }
+  return { ok: true, rawText: text, latencyMs, costUsd, tokens, generationId, error: null };
+}
+
+export const callModelVertex: CallModelFn = async (opts) => {
+  const {
+    modelId,
+    imageJpeg,
+    prompt,
+    // Below every route budget that reaches this, so a caller that forgets to
+    // pass one cannot outlive its own request.
+    timeoutMs = 60_000,
+  } = opts;
+
+  const config = buildVertexConfig(opts);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -93,46 +147,14 @@ export const callModelVertex: CallModelFn = async (opts) => {
   try {
     const response = await generateContentWithRetry({
       model: modelId,
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: prompt },
-            { inlineData: { mimeType: 'image/jpeg', data: imageJpeg.toString('base64') } },
-          ],
-        },
-      ],
+      contents: vertexContents(prompt, imageJpeg),
       config,
     });
-    const latencyMs = Math.round(performance.now() - started);
-
-    const meta = response.usageMetadata;
-    const tokens = meta
-      ? {
-          prompt: meta.promptTokenCount ?? 0,
-          completion: meta.candidatesTokenCount ?? 0,
-          reasoning: meta.thoughtsTokenCount ?? 0,
-        }
-      : null;
-    const costUsd = estimateCostUsd(modelId, tokens);
-    const generationId = response.responseId ?? null;
-
-    const text = response.text ?? '';
-    // An empty completion happens when the model burns its whole token budget
-    // thinking (billed, zero output). Treat as failure so callers' retry paths
-    // engage; keep cost/tokens for honest accounting.
-    if (!text.trim()) {
-      return {
-        ok: false,
-        rawText: null,
-        latencyMs,
-        costUsd,
-        tokens,
-        generationId,
-        error: 'empty completion (model produced no output)',
-      };
-    }
-    return { ok: true, rawText: text, latencyMs, costUsd, tokens, generationId, error: null };
+    return vertexOutcomeFromResponse(
+      response,
+      Math.round(performance.now() - started),
+      modelId
+    );
   } catch (err) {
     const latencyMs = Math.round(performance.now() - started);
     let msg: string;

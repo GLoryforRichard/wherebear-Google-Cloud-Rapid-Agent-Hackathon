@@ -32,7 +32,8 @@ function envPrice(): ModelPrice | null {
 
 export function estimateCostUsd(
   modelId: string,
-  tokens: { prompt: number; completion: number; reasoning: number } | null
+  tokens: { prompt: number; completion: number; reasoning: number } | null,
+  opts?: { tier?: 'standard' | 'flex' }
 ): number | null {
   if (!tokens) return null;
   const price =
@@ -40,7 +41,10 @@ export function estimateCostUsd(
     PRICE_TABLE[modelId] ??
     null;
   if (!price) return null;
+  // Flex service tier bills at 50% of standard list price (verified against
+  // the official Vertex/Gemini-API pricing pages, 2026-08).
+  const tierMultiplier = opts?.tier === 'flex' ? 0.5 : 1;
   const inputUsd = (tokens.prompt / 1_000_000) * price.inPerM;
   const outputUsd = ((tokens.completion + tokens.reasoning) / 1_000_000) * price.outPerM;
-  return inputUsd + outputUsd;
+  return (inputUsd + outputUsd) * tierMultiplier;
 }

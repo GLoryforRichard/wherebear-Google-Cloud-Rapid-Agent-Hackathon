@@ -23,7 +23,13 @@ export interface DailyOpStat {
 // worker's day, not UTC.
 const TZ = 'America/Toronto';
 
-export async function logOp(type: OpType, usage: Partial<UsageTotals>): Promise<void> {
+export async function logOp(
+  type: OpType,
+  usage: Partial<UsageTotals>,
+  /** Optional flat extras stored on the event (e.g. estimatedCostUsd,
+   *  serviceTier from the scan worker). Aggregations ignore unknown fields. */
+  extra?: Record<string, unknown>
+): Promise<void> {
   try {
     const full = addUsage({ ...EMPTY_USAGE }, usage);
     const db = await getDb();
@@ -31,6 +37,7 @@ export async function logOp(type: OpType, usage: Partial<UsageTotals>): Promise<
       type,
       ts: new Date(),
       usage: full,
+      ...(extra ?? {}),
     });
   } catch (err) {
     // Never break the actual operation because analytics failed.
