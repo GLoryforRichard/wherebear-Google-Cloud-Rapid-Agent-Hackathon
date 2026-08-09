@@ -59,3 +59,6 @@ docs/PROJECT_STORY_en.md
 /assets/
 /demo-video/
 /scripts/shoot*.mjs
+
+# cost-lab experiment artifacts (generated)
+/public/cost-lab-results/

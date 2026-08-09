@@ -12,6 +12,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import CostLabShowcase from '@/components/CostLabShowcase';
 
 type Paradigm = 'wherebear' | 'whataisle-openrouter' | 'whataisle-vertex';
 
@@ -456,6 +457,11 @@ export default function ComparePage() {
             </div>
           );
         })}
+      </div>
+
+      {/* 成本实验室:按环节换模型的降本对比(服务器实测工件,静态展示) */}
+      <div style={{ marginTop: 48, borderTop: '2px solid #e4e4e7', paddingTop: 26 }}>
+        <CostLabShowcase embedded />
       </div>
     </div>
   );
