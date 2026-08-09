@@ -38,4 +38,16 @@ export async function register() {
       console.warn('[warmup] non-fatal:', err instanceof Error ? err.message : err);
     }
   }, 1500);
+
+  // Scan-job worker: drains the async intake queue (app/api/vision/jobs).
+  // Same fire-and-forget posture as the warmup — a worker start failure
+  // must never take the app down; jobs just wait until the next restart.
+  setTimeout(async () => {
+    try {
+      const { startScanWorker } = await import('@/lib/scan/worker');
+      startScanWorker();
+    } catch (err) {
+      console.warn('[scan-worker] failed to start (non-fatal):', err instanceof Error ? err.message : err);
+    }
+  }, 2500);
 }

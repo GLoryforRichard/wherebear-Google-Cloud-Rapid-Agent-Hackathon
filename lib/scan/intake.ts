@@ -38,7 +38,7 @@ const intakeLimit = pLimit(1);
  *  Reasoning tokens bill (and count) as output. One image per call in this
  *  pipeline, so images = call count. storageBytes mirrors the old
  *  pipeline's accounting: actual bytes of the thumbnails we hand onward. */
-function usageFromOutcomes(outcomes: CallOutcome[], products: DetectedProduct[]): UsageTotals {
+export function usageFromOutcomes(outcomes: CallOutcome[], products: DetectedProduct[]): UsageTotals {
   const t = sumTokens(outcomes);
   return {
     geminiInputTokens: t.prompt,

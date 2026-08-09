@@ -60,6 +60,9 @@ export interface RowsHdConfig {
   gridConcurrency: number;
   /** Rows-cache namespace + log prefix, e.g. 'whataisle-vertex', 'vision-intake'. */
   tag: string;
+  /** Progress hook for the async job queue — observation only, fired at the
+   *  existing stage boundaries. Never alters model inputs. */
+  onStage?: (stage: 'rows' | 'detect' | 'readout' | 'post') => void;
 }
 
 export interface RowsHdRunResult {
@@ -212,6 +215,7 @@ export async function runRowsHd(
   // earlier. The raw pixel decode is pure CPU and runs UNDER the row-detect
   // network call instead of after it.
   const tRows = Date.now();
+  cfg.onStage?.('rows');
   const rowsKey = `${cfg.tag}:${imageKey}`;
   const rows = await rowsShared(rowsKey, () =>
     detectRowBands(cfg.callModel, cfg.modelId, images.processed)
@@ -225,6 +229,7 @@ export async function runRowsHd(
   // Stage 1: rows-hd band detection at full reasoning (the reasoning is the
   // source of correct product grouping — do not lower it here).
   const tDet = Date.now();
+  cfg.onStage?.('detect');
   let det: Awaited<ReturnType<typeof detectBoxes>>;
   try {
     det = await detectBoxes(cfg.callModel, cfg.modelId, images.full, rows.bands, {
@@ -246,6 +251,7 @@ export async function runRowsHd(
   // Barrier semantics preserved: chunks are formed over the full deduped,
   // reading-order-sorted box list, exactly like the champion pipeline.
   const tRead = Date.now();
+  cfg.onStage?.('readout');
   const readout = await readProductNames(
     cfg.callModel,
     cfg.modelId,
@@ -263,6 +269,7 @@ export async function runRowsHd(
 
   // Stage 3: names + within-photo dedup → uniform entries.
   const tPost = Date.now();
+  cfg.onStage?.('post');
   const labeled = applyReadoutNames(det.boxes, readout.names);
   const rawEntries = extractEntries(labeled);
   const entries: ScanEntry[] = await Promise.all(
