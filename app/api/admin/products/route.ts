@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/mongodb';
 import { adminWriteGuard } from '@/lib/admin-guard';
+import { nameKey } from '@/lib/name-key';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -108,21 +109,35 @@ export async function POST(req: NextRequest) {
         .map(s => s.trim()).filter(Boolean)
     ));
     const now = new Date();
-    const doc = {
-      canonical_name: canonical,
-      aliases,
-      search_text: buildSearchText(canonical, aliases),
-      category: body.category?.trim() || undefined,
-      latest_aisle: aisle,
-      aisles: [aisle],
-      evidence_count: typeof body.evidence_count === 'number'
-        ? Math.max(1, Math.floor(body.evidence_count)) : 1,
-      created_at: now,
-      updated_at: now,
-    };
+    const key = nameKey(canonical);
     const db = await getDb();
-    const res = await db.collection('products').insertOne(doc);
-    return NextResponse.json({ ok: true, product: { ...doc, _id: res.insertedId.toString() } });
+    // Upsert on name_key (same rule as the scan pipeline) so a manual add of
+    // an already-known SKU updates that doc instead of forking a duplicate.
+    const res = await db.collection('products').findOneAndUpdate(
+      { name_key: key },
+      {
+        $set: {
+          aliases,
+          search_text: buildSearchText(canonical, aliases),
+          ...(body.category?.trim() ? { category: body.category.trim() } : {}),
+          latest_aisle: aisle,
+          ...(!/[.$]/.test(aisle) ? { [`aisle_seen.${aisle}`]: now } : {}),
+          updated_at: now,
+        },
+        $addToSet: { aisles: aisle },
+        $setOnInsert: {
+          canonical_name: canonical,
+          evidence_count: typeof body.evidence_count === 'number'
+            ? Math.max(1, Math.floor(body.evidence_count)) : 1,
+          created_at: now,
+        },
+      },
+      { upsert: true, returnDocument: 'after', projection: { thumbnail: 0 } }
+    );
+    return NextResponse.json({
+      ok: true,
+      product: res ? { ...res, _id: res._id.toString() } : null,
+    });
   } catch (err) {
     return NextResponse.json({
       ok: false,

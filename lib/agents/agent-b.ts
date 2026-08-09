@@ -1,5 +1,6 @@
 import { UsageTotals, EMPTY_USAGE, addUsage } from '@/lib/cost';
 import { getDb } from '@/lib/mongodb';
+import { enrichCandidates } from '@/lib/enrich-candidates';
 import { AgentEvent } from './types';
 import {
   execUnderstandIntent,
@@ -72,30 +73,12 @@ export async function* runAgentB(input: AgentBInput): AsyncGenerator<AgentEvent>
   });
   usage = addUsage(usage, fin.usage);
 
-  // Enrich every candidate with its thumbnail + canonical aisle list from Mongo
-  // (we don't make the LLM carry 25 KB base64 images or full aisle arrays).
-  // Looked up by canonical_name (indexed), in parallel.
+  // Enrich every candidate with its thumbnail + freshness-classified aisle
+  // list from Mongo (we don't make the LLM carry 25 KB base64 images or full
+  // aisle arrays). Shared with the ADK pipeline — see lib/enrich-candidates.
   const candidates = fin.candidates;
   const guesses = fin.guesses ?? [];
-  await Promise.all([...candidates, ...guesses].map(async (c) => {
-    if (!c.canonical_name) return;
-    try {
-      const enriched = await db.collection('products').findOne(
-        { canonical_name: c.canonical_name },
-        { projection: { thumbnail: 1, aisles: 1, latest_aisle: 1 } }
-      );
-      if (enriched) {
-        if (typeof enriched.thumbnail === 'string') c.thumbnail = enriched.thumbnail;
-        if (Array.isArray(enriched.aisles) && enriched.aisles.length > 0) {
-          c.aisles = enriched.aisles as string[];
-        } else if (typeof enriched.latest_aisle === 'string') {
-          c.aisles = [enriched.latest_aisle];
-        }
-      }
-    } catch {
-      /* non-fatal — that card just won't show an image / extra aisles */
-    }
-  }));
+  await enrichCandidates(db, [...candidates, ...guesses]);
 
   const finishData = {
     candidates,

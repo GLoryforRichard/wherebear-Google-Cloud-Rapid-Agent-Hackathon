@@ -46,9 +46,12 @@ function friendlyError(raw: string, t: TFunc): string {
 interface FinishProduct {
   canonical_name: string;
   latest_aisle: string;
-  /** All shelves this SKU has been seen on. Falls back to [latest_aisle] for
-   *  legacy docs. */
+  /** Current locations, most recently seen first. Falls back to
+   *  [latest_aisle] for legacy docs. */
   aisles?: string[];
+  /** Shelves re-scanned after the last sighting without the product —
+   *  rendered greyed out as "probably moved". */
+  stale_aisles?: string[];
   score: number;
   evidence_count: number;
   aliases?: string[];
@@ -225,11 +228,22 @@ function ResultCard({
     animation: 'rise .32s ease-out both',
     animationDelay: `${i * 0.07}s`,
   });
+  // Fresh locations first; if a card has ONLY stale ones (item moved, new
+  // spot unknown) the stale shelves are still the best lead we have.
+  const cardAisles = (c: FinishProduct) => {
+    const fresh = c.aisles && c.aisles.length ? Array.from(new Set(c.aisles)) : [];
+    const stale = c.stale_aisles && c.stale_aisles.length ? Array.from(new Set(c.stale_aisles)) : [];
+    if (!fresh.length && !stale.length) return { fresh: c.latest_aisle ? [c.latest_aisle] : [], stale: [] };
+    return { fresh, stale };
+  };
   // Map highlights the matched shelves — or the guessed shelves when nothing matched.
   const allAisles = Array.from(new Set(
     (found ? candidates : guesses)
-      .flatMap(c => (c.aisles && c.aisles.length ? c.aisles : [c.latest_aisle]))
-      .filter(Boolean) as string[]
+      .flatMap(c => {
+        const { fresh, stale } = cardAisles(c);
+        return fresh.length ? fresh : stale;
+      })
+      .filter(Boolean)
   ));
 
   return (
@@ -269,9 +283,7 @@ function ResultCard({
               : t('find_you_might_mean')}
           </div>
           {candidates.map((c, idx) => {
-            const aisles = c.aisles && c.aisles.length
-              ? Array.from(new Set(c.aisles))
-              : [c.latest_aisle];
+            const { fresh, stale } = cardAisles(c);
             return (
               <div key={`${c.canonical_name}-${idx}`} style={{
                 background: C.white, borderRadius: 18, border: `1px solid ${C.border}`,
@@ -296,7 +308,7 @@ function ResultCard({
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 7, flexWrap: 'wrap' }}>
                       <Icon name="pin" size={14} style={{ color: C.accent, flexShrink: 0 }} />
-                      {aisles.map((code, i) => (
+                      {fresh.map((code, i) => (
                         <span key={`${code}-${i}`} style={{
                           display: 'inline-flex', alignItems: 'center',
                           background: i === 0 ? C.primary : C.primarySofter,
@@ -306,7 +318,23 @@ function ResultCard({
                           fontFamily: 'ui-monospace, monospace', letterSpacing: 0.3,
                         }}>{code}</span>
                       ))}
+                      {stale.map((code, i) => (
+                        <span key={`stale-${code}-${i}`} style={{
+                          display: 'inline-flex', alignItems: 'center',
+                          background: C.bgMuted, color: C.textMuted,
+                          border: `1px dashed ${C.border}`,
+                          padding: '1px 9px', borderRadius: 999,
+                          fontSize: 12.5, fontWeight: 700,
+                          fontFamily: 'ui-monospace, monospace', letterSpacing: 0.3,
+                          textDecoration: 'line-through', opacity: 0.75,
+                        }}>{code}</span>
+                      ))}
                     </div>
+                    {stale.length > 0 && (
+                      <div style={{ fontSize: 11, color: C.textMuted, marginTop: 5, lineHeight: 1.4 }}>
+                        {t('find_stale_hint')}
+                      </div>
+                    )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
                       <span style={{ fontSize: 11.5, color: C.textSoft, fontWeight: 500 }}>
                         {t('find_seen')} {c.evidence_count}×
@@ -345,7 +373,8 @@ function ResultCard({
                 <Icon name="pin" size={13} /> {t('find_guess_title')}
               </div>
               {guesses.map((g, idx) => {
-                const ais = g.aisles && g.aisles.length ? Array.from(new Set(g.aisles)) : [g.latest_aisle];
+                const gAisles = cardAisles(g);
+                const ais = gAisles.fresh.length ? gAisles.fresh : gAisles.stale;
                 return (
                   <div key={`${g.canonical_name}-${idx}`} style={{
                     display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',

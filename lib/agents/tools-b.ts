@@ -394,7 +394,11 @@ Keep product names in their original language. Return ONLY JSON (no prose, no co
 export interface FinishCandidate {
   canonical_name: string;
   latest_aisle?: string;
+  /** Current locations, most recently seen first (set by enrichCandidates). */
   aisles?: string[];
+  /** Shelves re-scanned after the last sighting without the product — shown
+   *  greyed out as "probably moved". */
+  stale_aisles?: string[];
   score?: number;
   evidence_count?: number;
   aliases?: string[];

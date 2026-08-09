@@ -1,6 +1,7 @@
 import { Db } from 'mongodb';
 import { Product } from './types';
 import { DetectedProduct } from './gemini';
+import { nameKey } from './name-key';
 
 function buildSearchText(canonicalName: string, aliases: string[]): string {
   const all = [canonicalName, ...aliases];
@@ -21,7 +22,8 @@ export async function upsertDetectedProducts(
     const canonical = item.name.trim();
     if (!canonical) continue;
 
-    const existing = await col.findOne({ canonical_name: canonical });
+    const key = nameKey(canonical);
+    const existing = await col.findOne({ name_key: key });
 
     if (existing) {
       await col.updateOne(
@@ -36,6 +38,7 @@ export async function upsertDetectedProducts(
       const aliases = [canonical];
       await col.insertOne({
         canonical_name: canonical,
+        name_key: key,
         aliases,
         search_text: buildSearchText(canonical, aliases),
         category: item.category,

@@ -20,11 +20,11 @@ import {
   getFunctionCalls,
   getFunctionResponses,
 } from '@google/adk';
-import type { Db } from 'mongodb';
 import { getDb } from '@/lib/mongodb';
+import { enrichCandidates } from '@/lib/enrich-candidates';
 import { AgentEvent } from '../types';
 import { UsageTotals, EMPTY_USAGE, addUsage, extractGeminiUsage } from '@/lib/cost';
-import { synthesizeFinish, execHybridSearch, FinishCandidate } from '@/lib/agents/tools-b';
+import { synthesizeFinish, execHybridSearch } from '@/lib/agents/tools-b';
 import { getSearchAgent } from './search-agent';
 
 export interface AgentBInput {
@@ -35,28 +35,8 @@ function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
 }
 
-/** Backfill thumbnail + canonical aisle list from Mongo for each candidate,
- *  mutating in place — same enrichment the legacy pipeline did (agent-b.ts). */
-async function enrich(db: Db, list: FinishCandidate[]): Promise<void> {
-  await Promise.all(
-    list.map(async (c) => {
-      if (!c.canonical_name) return;
-      try {
-        const e = await db.collection('products').findOne(
-          { canonical_name: c.canonical_name },
-          { projection: { thumbnail: 1, aisles: 1, latest_aisle: 1 } }
-        );
-        if (e) {
-          if (typeof e.thumbnail === 'string') c.thumbnail = e.thumbnail;
-          if (Array.isArray(e.aisles) && e.aisles.length > 0) c.aisles = e.aisles as string[];
-          else if (typeof e.latest_aisle === 'string') c.aisles = [e.latest_aisle];
-        }
-      } catch {
-        /* non-fatal — that card just won't show an image / extra aisles */
-      }
-    })
-  );
-}
+// Thumbnail + freshness-classified aisle enrichment is shared with the
+// legacy pipeline — see lib/enrich-candidates.ts.
 
 export async function* runAgentBAdk(input: AgentBInput): AsyncGenerator<AgentEvent> {
   const query = input.query;
@@ -153,7 +133,7 @@ export async function* runAgentBAdk(input: AgentBInput): AsyncGenerator<AgentEve
 
   const candidates = fin.candidates;
   const guesses = fin.guesses ?? [];
-  await enrich(db, [...candidates, ...guesses]);
+  await enrichCandidates(db, [...candidates, ...guesses]);
 
   const finishData = {
     candidates,

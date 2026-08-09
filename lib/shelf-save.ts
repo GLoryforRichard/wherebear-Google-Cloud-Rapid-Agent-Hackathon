@@ -27,6 +27,7 @@ import { DetectedProduct } from '@/lib/gemini';
 import { AgentEvent } from '@/lib/agents/types';
 import { execExpandAliasesBatch } from '@/lib/agents/tools-a';
 import { buildShelfContext } from '@/lib/shelves';
+import { nameKey } from '@/lib/name-key';
 import { UsageTotals, EMPTY_USAGE } from '@/lib/cost';
 
 // Rough character → token ratio for the rapid cost estimate we emit during
@@ -44,6 +45,7 @@ export interface ShelfSaveInput {
 
 interface NormalizedProduct {
   canonical_name: string;
+  name_key: string;
   category?: string;
   confidence?: 'high' | 'medium' | 'low';
   /** 240px JPEG data URL — the best-lit crop chosen during Stage 2 dedup. */
@@ -65,21 +67,26 @@ function buildSearchText(canonical: string, aliases: string[]): string {
   ).join(' · ');
 }
 
-/** De-dupe by canonical_name, merging fields by latest non-empty value. */
+/** De-dupe by normalized name_key (case/punctuation-insensitive), merging
+ *  fields by latest non-empty value; the first spelling read wins as the
+ *  display name. */
 function normalizeShelfProducts(products: DetectedProduct[]): NormalizedProduct[] {
-  const byName = new Map<string, NormalizedProduct>();
+  const byKey = new Map<string, NormalizedProduct>();
   for (const p of products) {
     const canonical = normalizeCanonicalName(p?.name ?? '');
     if (!canonical) continue;
-    const prior = byName.get(canonical);
-    byName.set(canonical, {
-      canonical_name: canonical,
+    const key = nameKey(canonical);
+    if (!key) continue;
+    const prior = byKey.get(key);
+    byKey.set(key, {
+      canonical_name: prior?.canonical_name ?? canonical,
+      name_key: key,
       category: p.category ?? prior?.category,
       confidence: p.confidence ?? prior?.confidence,
       thumbnail: p.thumbnail ?? prior?.thumbnail,
     });
   }
-  return Array.from(byName.values());
+  return Array.from(byKey.values());
 }
 
 /**
@@ -125,21 +132,30 @@ export async function* saveShelfDirect(
 
   // STEP 2: figure out new vs existing for accurate inserted/updated counts.
   const names = items.map(p => p.canonical_name);
+  const keys = items.map(p => p.name_key);
   const existingDocs = await db
     .collection('products')
-    .find({ canonical_name: { $in: names } }, { projection: { canonical_name: 1 } })
+    .find({ name_key: { $in: keys } }, { projection: { name_key: 1 } })
     .toArray();
-  const existingNames = new Set(existingDocs.map(d => d.canonical_name as string));
+  const existingKeys = new Set(existingDocs.map(d => d.name_key as string));
 
-  // STEP 3: one bulkWrite with all upserts.
+  // STEP 3: one bulkWrite with all upserts, keyed on name_key so a re-scan
+  // that reads the same SKU with different case/punctuation still lands on
+  // the existing doc instead of forking a duplicate.
   const now = new Date();
+  // Mongo field paths can't contain '.' or '$' — aisle codes never should,
+  // but if one ever does we just skip the per-aisle timestamp (fail-open).
+  const canStampSeen = !/[.$]/.test(input.aisle);
   const ops: AnyBulkWriteOperation<Document>[] = items.map(p => ({
     updateOne: {
-      filter: { canonical_name: p.canonical_name },
+      filter: { name_key: p.name_key },
       update: {
         $set: {
           latest_aisle: input.aisle,
           updated_at: now,
+          // Per-aisle last-sighting stamp — lets search grey out shelves that
+          // were re-scanned later without this product showing up.
+          ...(canStampSeen ? { [`aisle_seen.${input.aisle}`]: now } : {}),
           ...(p.category ? { category: p.category } : {}),
           ...(p.confidence ? { last_confidence: p.confidence } : {}),
           // Always refresh thumbnail with the latest best-quality crop —
@@ -182,7 +198,7 @@ export async function* saveShelfDirect(
   }
 
   const tCallEnd = Date.now();
-  const inserted = items.filter(p => !existingNames.has(p.canonical_name)).length;
+  const inserted = items.filter(p => !existingKeys.has(p.name_key)).length;
   const updated = items.length - inserted;
 
   yield {
@@ -279,7 +295,7 @@ export async function enhanceShelfBackground(input: ShelfSaveInput): Promise<voi
       );
       ops.push({
         updateOne: {
-          filter: { canonical_name: item.canonical_name },
+          filter: { name_key: item.name_key },
           update: {
             $set: {
               aliases: finalAliases,
