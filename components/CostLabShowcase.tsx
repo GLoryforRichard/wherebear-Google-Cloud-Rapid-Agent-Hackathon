@@ -470,7 +470,11 @@ export default function CostLabShowcase({ embedded = false }: { embedded?: boole
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/cost-lab-results/index.json')
+    // Cache-buster: Next's production server negative-caches a static path
+    // that was requested before the file existed (measured on the VM:
+    // index.json 404'd from cache while sibling artifacts served 200). A
+    // unique query string sidesteps the poisoned entry.
+    fetch(`/cost-lab-results/index.json?t=${Date.now()}`)
       .then((r) => {
         if (!r.ok) throw new Error(`index.json HTTP ${r.status} — 先跑 GET /api/cost-lab 生成`);
         return r.json();
