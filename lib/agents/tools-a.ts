@@ -1,6 +1,17 @@
 import { Db, ObjectId } from 'mongodb';
 import { Type, FunctionDeclaration } from '@google/genai';
 import { generateContentWithRetry, VISION_MODEL } from '@/lib/gemini';
+import { SCAN_SERVICE_TIER, generateContentFlex } from '@/lib/scan/transport-flex';
+
+/**
+ * Save-path alias expansion runs on the intake model — decoupled from
+ * VISION_MODEL, which search/voice/identify share and which must stay on
+ * its fast interactive setting. This call fires AFTER the save SSE closes
+ * (lib/shelf-save.ts enhanceShelfBackground), so on the flex tier it also
+ * takes the half-price slow lane: minutes of extra latency are invisible
+ * there, and products stay searchable by canonical name meanwhile.
+ */
+const ALIAS_MODEL = process.env.GEMINI_ALIAS_MODEL || 'gemini-3.6-flash';
 import { Product, ShelfEvidence } from '@/lib/types';
 import { mcpFind, mcpInsertMany, mcpUpdateMany } from '@/lib/mcp/mongo-ops';
 
@@ -341,8 +352,9 @@ export async function execExpandAliasesBatch(args: {
   if (!args.canonical_names || args.canonical_names.length === 0) {
     return { aliases_by_name: {} };
   }
-  const result = await generateContentWithRetry({
-    model: VISION_MODEL,
+  const generate = SCAN_SERVICE_TIER === 'flex' ? generateContentFlex : generateContentWithRetry;
+  const result = await generate({
+    model: ALIAS_MODEL,
     contents: [
       {
         role: 'user',
