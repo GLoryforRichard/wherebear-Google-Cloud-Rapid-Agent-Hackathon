@@ -101,14 +101,22 @@ export async function runMix(imageBuffer: Buffer, scheme: LabScheme): Promise<Mi
   stages.detect = Date.now() - tDet;
   warnings.push(...det.parse.warnings.map((w) => `detect: ${w}`));
 
-  // Stage 2: grid readout (scheme.readout model) — reasoning off
+  // Stage 2: grid readout (scheme.readout model) — reasoning off.
+  // Vertex readout must not oversubscribe the process-wide Vertex gate
+  // (GEMINI_MAX_CONCURRENT, prod 14): queued calls burn their abort window
+  // before acquiring a slot — the load-induced accuracy hazard intake.ts
+  // documents. Production intake runs grids at 6; mirror that on Vertex.
+  const gridConcurrency =
+    scheme.readout.transport === 'vertex'
+      ? Math.min(6, scheme.gridConcurrency)
+      : scheme.gridConcurrency;
   const tRead = Date.now();
   const readout = await readProductNames(
     stageCallModel(scheme.readout),
     scheme.readout.modelId,
     images.full,
     det.boxes,
-    { gridConcurrency: scheme.gridConcurrency, raw }
+    { gridConcurrency, raw }
   );
   stages.readout = Date.now() - tRead;
   if (readout.fallbackChunks > 0) {
