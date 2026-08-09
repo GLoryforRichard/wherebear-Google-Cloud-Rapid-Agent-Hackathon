@@ -50,9 +50,18 @@ export async function getAisleLastScans(db: Db): Promise<Map<string, Date>> {
 
 function toDate(v: unknown): Date | null {
   if (v instanceof Date) return v;
-  if (typeof v === 'string') {
+  if (typeof v === 'string' || typeof v === 'number') {
     const d = new Date(v);
     return Number.isNaN(d.getTime()) ? null : d;
+  }
+  // MCP responses carry EJSON: { $date: "ISO" } or { $date: { $numberLong: "ms" } }.
+  // mongo-ops only revives top-level fields, and aisle_seen is nested.
+  if (v && typeof v === 'object' && '$date' in (v as Record<string, unknown>)) {
+    const inner = (v as { $date: unknown }).$date;
+    if (inner && typeof inner === 'object' && '$numberLong' in (inner as Record<string, unknown>)) {
+      return toDate(Number((inner as { $numberLong: string }).$numberLong));
+    }
+    return toDate(inner);
   }
   return null;
 }
