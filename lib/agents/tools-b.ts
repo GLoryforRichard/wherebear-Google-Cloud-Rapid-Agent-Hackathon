@@ -5,6 +5,7 @@ import { UsageTotals, extractGeminiUsage } from '@/lib/cost';
 import { SearchLog } from '@/lib/types';
 import { mcpAggregate, mcpInsertMany } from '@/lib/mcp/mongo-ops';
 import { SHELVES } from '@/lib/shelves';
+import { getAisleLastScans, classifyAisles } from '@/lib/aisle-freshness';
 
 // ─────────────────────────────────────────────────────────────
 // Tool declarations
@@ -184,8 +185,14 @@ interface VectorHit {
   aliases: string[];
   latest_aisle: string;
   /** All distinct shelves this SKU was seen on. May be undefined for legacy
-   *  docs that pre-date the multi-aisle migration. */
+   *  docs that pre-date the multi-aisle migration. After execHybridSearch
+   *  this holds only CURRENT locations (freshness-classified). */
   aisles?: string[];
+  /** Shelves contradicted by a later re-scan while a fresher sighting exists
+   *  elsewhere — set by execHybridSearch, excluded from the LLM's answer. */
+  stale_aisles?: string[];
+  /** Last sighting per aisle — projected for freshness classification. */
+  aisle_seen?: Record<string, unknown>;
   category?: string;
   evidence_count: number;
   score: number;
@@ -215,6 +222,7 @@ export async function execVectorSearch(
           aliases: 1,
           latest_aisle: 1,
           aisles: 1,
+          aisle_seen: 1,
           category: 1,
           evidence_count: 1,
           score: { $meta: 'vectorSearchScore' },
@@ -260,6 +268,7 @@ export async function execTextSearch(
             aliases: 1,
             latest_aisle: 1,
             aisles: 1,
+            aisle_seen: 1,
             category: 1,
             evidence_count: 1,
             score: { $meta: 'searchScore' },
@@ -317,11 +326,20 @@ export async function execHybridSearch(
   args: { query_text: string; limit?: number }
 ): Promise<{ hits: VectorHit[]; via: 'mcp' | 'sdk' }> {
   const limit = Math.min(Math.max(args.limit ?? 10, 1), 10);
-  const [vec, txt] = await Promise.all([
+  const [vec, txt, lastScans] = await Promise.all([
     execVectorSearch(db, { query_text: args.query_text, limit }),
     execTextSearch({ query_text: args.query_text, limit }),
+    getAisleLastScans(db).catch(() => new Map<string, Date>()),
   ]);
   const hits = rrfFuse(vec.hits, txt.hits).slice(0, limit);
+  // Split each hit's aisle list into current vs contradicted-by-a-later-scan
+  // BEFORE the finish LLM sees it, so the spoken answer only names shelves
+  // the product is actually on (the UI still greys the stale ones out).
+  for (const h of hits) {
+    const { fresh, stale } = classifyAisles(h, lastScans);
+    h.aisles = fresh;
+    h.stale_aisles = stale;
+  }
   // 'mcp' if either leg went through MCP — keeps the UI's MCP pill honest.
   const via: 'mcp' | 'sdk' = vec.via === 'mcp' || txt.via === 'mcp' ? 'mcp' : 'sdk';
   return { hits, via };
@@ -428,6 +446,7 @@ function pickCandidate(h: VectorHit): FinishCandidate {
     canonical_name: h.canonical_name,
     latest_aisle: h.latest_aisle,
     aisles: h.aisles && h.aisles.length ? h.aisles : [h.latest_aisle],
+    stale_aisles: h.stale_aisles,
     score: h.score,
     evidence_count: h.evidence_count,
     aliases: h.aliases,
