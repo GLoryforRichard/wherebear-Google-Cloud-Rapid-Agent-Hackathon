@@ -154,11 +154,19 @@ function QueueRow({ item, first }: { item: QueueItem; first: boolean }) {
     (item.status === 'queued' || item.status === 'detected') &&
     !!item.nextAttemptAt && item.nextAttemptAt > Date.now();
 
+  // Async detection reports its pipeline stage — show real progression
+  // instead of a bare "Recognizing…" for what can now be minutes on the
+  // flex tier. Language-neutral fractions keep i18n out of it.
+  const stageSuffix =
+    item.status === 'detecting' && item.jobStage
+      ? ({ rows: ' · 1/4', detect: ' · 2/4', readout: ' · 3/4', post: ' · 4/4' }[item.jobStage] ?? '')
+      : '';
+
   const statusLabel = isFailed
     ? errorLabel(item, t)
     : waitingBackoff
       ? `${t('queue_retrying')} · ${t('queue_attempts', item.attempts, MAX_ATTEMPTS_SHOWN)}`
-      : t(`queue_status_${item.status}` as 'queue_status_queued');
+      : t(`queue_status_${item.status}` as 'queue_status_queued') + stageSuffix;
 
   return (
     <div style={{

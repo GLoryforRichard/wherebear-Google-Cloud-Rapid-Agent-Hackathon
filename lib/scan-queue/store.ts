@@ -34,6 +34,10 @@ export interface QueueItem {
   previewUrl: string;
   /** Detection result once status reaches 'detected'. */
   products: DetectedProduct[];
+  /** Server scan-job id while detection runs async (submit → poll). */
+  jobId?: string;
+  /** Server-reported pipeline stage (rows/detect/readout/post) for the UI. */
+  jobStage?: string;
   /** Which stage a failure happened in, for retry routing. */
   failedStage?: 'detect' | 'save';
   /** Machine-readable failure class for i18n copy + retry policy. */

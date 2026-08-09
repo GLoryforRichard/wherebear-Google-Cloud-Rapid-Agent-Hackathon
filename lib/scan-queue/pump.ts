@@ -3,27 +3,32 @@
 /**
  * Worker loop for the global scan queue.
  *
- * Each photo: persist to IndexedDB FIRST → POST /api/vision (detect) →
- * persist products → auto-chain the save (POST /api/shelf-evidence, SSE
- * drain + server-side verification) → saved. Everything runs in the module
- * scope, so navigation anywhere in the app never interrupts it; a reload
- * re-enters through restoreFromOutbox.
+ * Each photo: persist to IndexedDB FIRST → submit to /api/vision/jobs
+ * (async detect: 202 + jobId, idempotent by photo hash) → poll the job
+ * every POLL_MS until done → persist products → auto-chain the save
+ * (POST /api/shelf-evidence, SSE drain + server-side verification) →
+ * saved. Everything runs in the module scope, so navigation anywhere in
+ * the app never interrupts it; a reload re-enters through
+ * restoreFromOutbox — and an item that already has a jobId RESUMES POLLING
+ * instead of re-running detection (no re-bill on hard kills anymore).
  *
- * Concurrency: DETECT_CONCURRENCY=1 — /api/vision runs the rows-hd
- * pipeline, which fans out up to 8 Vertex calls per photo server-side, so
- * photos go through detection one at a time (the server enforces the same
- * limit). Saves are cheap and chain inside the pump loop.
+ * Detection runs server-side in a background worker (flex half-price tier
+ * capable, minutes-long per photo is normal); the phone only holds cheap
+ * short requests. DETECT_CONCURRENCY bounds how many jobs this client
+ * keeps in flight; the server's own queue cap (429 + retryAfterMs) is the
+ * real governor and is treated as backpressure, not failure.
  *
- * Retry engine (new over the whataisle-store port, which shipped the
- * `attempts` field but never used it): transient failures — network drops,
- * 5xx/429, SSE breaks that fail verification — auto-retry up to
- * MAX_ATTEMPTS per stage with backoff; a window 'online' listener revives
- * network casualties immediately. Non-retryable failures (413 too large,
- * zero products detected) go straight to 'failed' for manual action.
+ * Retry engine: transient failures — network drops, 5xx, poll-expiry —
+ * auto-retry up to MAX_ATTEMPTS per stage with backoff (re-submits are
+ * hash-idempotent server-side, so retries can't double-bill); a window
+ * 'online' listener revives network casualties immediately. Non-retryable
+ * failures (413 too large, zero products detected) go straight to 'failed'
+ * for manual action.
  *
  * Multi-tab caveat (accepted): two open tabs would both restore and process
- * the same outbox rows. This is a single-staff-device app; the server-side
- * save is upsert-based so double-processing wastes one detection at worst.
+ * the same outbox rows. This is a single-staff-device app; submits are
+ * hash-idempotent and the save is upsert-based, so double-processing costs
+ * duplicate polls at worst.
  */
 
 import type { DetectedProduct } from '@/lib/gemini';
@@ -44,20 +49,22 @@ import {
   updateItem,
 } from './store';
 
-// 1, not the old 2: /api/vision now runs the rows-hd pipeline, which fans
-// out up to 8 Vertex calls per photo server-side. Photos go through the
-// pipeline serially (the server enforces this too, lib/scan/intake.ts) so
-// the process-wide Gemini gate is never oversubscribed — queueing under the
-// per-call abort timers is an accuracy hazard, not just a slowdown.
-const DETECT_CONCURRENCY = 1;
+// Outstanding server jobs this client keeps in flight (submitted, not yet
+// done). Submissions are cheap 202s — the server's queue cap + worker
+// concurrency govern actual pipeline load, and a full queue answers 429
+// backpressure which we wait out without burning an attempt.
+const DETECT_CONCURRENCY = 4;
 /** Tries per stage, counting the first one. */
 const MAX_ATTEMPTS = 3;
 /** Backoff before auto-retry attempt 2 and 3. */
 const BACKOFF_MS = [5_000, 15_000];
+/** Job status poll cadence while any detection is in flight. */
+const POLL_MS = 5_000;
 
 const blobs = new Map<string, Blob>();
 let pumping = false;
 let backoffTimer: ReturnType<typeof setTimeout> | null = null;
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
 function newId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -153,10 +160,12 @@ export async function restoreFromOutbox(): Promise<void> {
   for (const r of records) {
     if (getItem(r.id)) continue;
     // Roll interrupted in-flight statuses back to their last safe state.
-    // A photo killed mid-detect re-runs detection (re-billed once — the
-    // accepted cost of a hard kill); one killed mid-save re-runs the save.
+    // A photo killed mid-detect WITH a jobId resumes polling — the server
+    // job kept running, nothing is re-billed. Without a jobId (killed
+    // between enqueue and submit) it re-queues; submits are hash-idempotent
+    // anyway. One killed mid-save re-runs the save.
     const status =
-      r.status === 'detecting' ? 'queued'
+      r.status === 'detecting' && !r.jobId ? 'queued'
       : r.status === 'saving' ? 'detected'
       : r.status;
     const products: DetectedProduct[] = r.productsJson
@@ -169,6 +178,7 @@ export async function restoreFromOutbox(): Promise<void> {
       status,
       previewUrl: URL.createObjectURL(r.blob),
       products,
+      jobId: r.jobId,
       failedStage: r.failedStage,
       errorCode: r.errorCode,
       nextAttemptAt: r.nextAttemptAt,
@@ -178,6 +188,7 @@ export async function restoreFromOutbox(): Promise<void> {
       createdAt: r.createdAt,
     });
   }
+  if (getItems().some((i) => i.status === 'detecting' && i.jobId)) ensurePolling();
   void pump();
 }
 
@@ -203,12 +214,12 @@ async function pump(): Promise<void> {
       const detecting = items.filter((i) => i.status === 'detecting').length;
       const next = items.find((i) => i.status === 'queued' && eligible(i));
       if (!next || detecting >= DETECT_CONCURRENCY) break;
-      // Fire without awaiting so both detect slots fill; each completion
-      // re-enters pump (a no-op if a pump is already looping — that loop
-      // re-reads the queue and picks the finished item up itself).
+      // Fire without awaiting so all submit slots fill; each submit settles
+      // fast (202 + jobId) and re-enters pump (a no-op if a pump is already
+      // looping — that loop re-reads the queue and picks up new work itself).
       updateItem(next.id, { status: 'detecting' });
       void outboxUpdate(next.id, { status: 'detecting' });
-      void detectOne(next.id).finally(() => void pump());
+      void submitOne(next.id).finally(() => void pump());
     }
   } finally {
     pumping = false;
@@ -265,7 +276,9 @@ function failItem(
   armBackoffTimer();
 }
 
-async function detectOne(id: string): Promise<void> {
+/** Submit one photo as a server scan job (202 + jobId, hash-idempotent).
+ *  The item stays 'detecting' while the poll loop tracks the job. */
+async function submitOne(id: string): Promise<void> {
   const item = getItem(id);
   const blob = blobs.get(id);
   if (!item || !blob) return;
@@ -275,7 +288,7 @@ async function detectOne(id: string): Promise<void> {
     fd.append('aisle', item.aisle);
     let res: Response;
     try {
-      res = await fetch('/api/vision', { method: 'POST', body: fd });
+      res = await fetch('/api/vision/jobs', { method: 'POST', body: fd });
     } catch (err) {
       if (!getItem(id)) return;
       failItem(id, 'detect', 'network', err instanceof Error ? err.message : String(err));
@@ -288,28 +301,119 @@ async function detectOne(id: string): Promise<void> {
     }
     const data = (await res.json().catch(() => null)) as {
       ok: boolean;
-      products?: DetectedProduct[];
+      jobId?: string;
+      status?: string;
       error?: string;
+      retryAfterMs?: number;
     } | null;
     if (!getItem(id)) return;
-    if (!data?.ok) {
+    if (res.status === 429) {
+      // Server queue full — backpressure, not a failure. Wait it out
+      // WITHOUT consuming an attempt; the outbox is the deep buffer.
+      const patch = { status: 'queued' as const, nextAttemptAt: Date.now() + (data?.retryAfterMs ?? 20_000) };
+      updateItem(id, patch);
+      void outboxUpdate(id, patch);
+      armBackoffTimer();
+      return;
+    }
+    if (!data?.ok || !data.jobId) {
       failItem(id, 'detect', 'server', data?.error || `HTTP ${res.status}`);
       return;
     }
-    const raw = data.products ?? [];
-    const products = await cropThumbnails(blob, raw).catch(() => raw);
+    updateItem(id, { jobId: data.jobId, jobStage: undefined });
+    void outboxUpdate(id, { jobId: data.jobId });
+    ensurePolling();
+  } catch (err) {
     if (!getItem(id)) return;
-    updateItem(id, { status: 'detected', products, error: undefined, errorCode: undefined, nextAttemptAt: undefined });
-    await outboxUpdate(id, {
+    failItem(id, 'detect', 'server', err instanceof Error ? err.message : String(err));
+  }
+}
+
+// ── job polling ────────────────────────────────────────────────────────────
+
+function ensurePolling(): void {
+  if (pollTimer) return;
+  pollTimer = setTimeout(() => {
+    pollTimer = null;
+    void pollJobs();
+  }, POLL_MS);
+}
+
+async function pollJobs(): Promise<void> {
+  const inFlight = getItems().filter((i) => i.status === 'detecting' && i.jobId);
+  for (const item of inFlight) {
+    await pollOne(item.id).catch(() => {});
+  }
+  if (getItems().some((i) => i.status === 'detecting' && i.jobId)) ensurePolling();
+}
+
+async function pollOne(id: string): Promise<void> {
+  const item = getItem(id);
+  if (!item || item.status !== 'detecting' || !item.jobId) return;
+  let res: Response;
+  try {
+    res = await fetch(`/api/vision/jobs/${item.jobId}`);
+  } catch {
+    return; // offline etc. — polls are free to skip; the job runs server-side
+  }
+  if (!getItem(id)) return;
+  if (res.status === 404) {
+    // TTL/ack race — the job doc is gone. Re-submit (hash-idempotent).
+    updateItem(id, { jobId: undefined, jobStage: undefined });
+    void outboxUpdate(id, { jobId: undefined });
+    failItem(id, 'detect', 'server', 'job expired server-side');
+    return;
+  }
+  const data = (await res.json().catch(() => null)) as {
+    ok: boolean;
+    status?: string;
+    stage?: string;
+    products?: DetectedProduct[];
+    error?: string;
+  } | null;
+  if (!getItem(id) || !data?.ok) return;
+
+  if (data.status === 'done') {
+    const jobId = item.jobId;
+    const blob = blobs.get(id);
+    const raw = data.products ?? [];
+    const products = blob ? await cropThumbnails(blob, raw).catch(() => raw) : raw;
+    if (!getItem(id)) return;
+    updateItem(id, {
       status: 'detected',
-      productsJson: JSON.stringify(products),
+      products,
+      jobId: undefined,
+      jobStage: undefined,
       error: undefined,
       errorCode: undefined,
       nextAttemptAt: undefined,
     });
-  } catch (err) {
-    if (!getItem(id)) return;
-    failItem(id, 'detect', 'server', err instanceof Error ? err.message : String(err));
+    await outboxUpdate(id, {
+      status: 'detected',
+      productsJson: JSON.stringify(products),
+      jobId: undefined,
+      error: undefined,
+      errorCode: undefined,
+      nextAttemptAt: undefined,
+    });
+    // Ack AFTER the products are safely in IndexedDB — the server frees the
+    // job dir early; a crash between poll and ack just means TTL cleanup.
+    void fetch(`/api/vision/jobs/${jobId}`, { method: 'DELETE' }).catch(() => {});
+    void pump(); // chain the save
+    return;
+  }
+
+  if (data.status === 'failed') {
+    updateItem(id, { jobId: undefined, jobStage: undefined });
+    void outboxUpdate(id, { jobId: undefined });
+    // failItem rolls back to 'queued'; the re-submit resets the failed
+    // server job (hash match) instead of creating a duplicate.
+    failItem(id, 'detect', 'server', data.error || 'scan failed server-side');
+    return;
+  }
+
+  if (data.stage && data.stage !== item.jobStage) {
+    updateItem(id, { jobStage: data.stage });
   }
 }
 
@@ -427,6 +531,7 @@ if (typeof window !== 'undefined') {
       }
     }
     void pump();
+    void pollJobs(); // resume job polls immediately after reconnect
   });
 }
 

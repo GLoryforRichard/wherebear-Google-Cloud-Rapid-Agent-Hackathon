@@ -31,6 +31,9 @@ export interface OutboxRecord {
   status: 'queued' | 'detecting' | 'detected' | 'saving' | 'saved' | 'failed';
   /** JSON-serialized DetectedProduct[] once detection has completed. */
   productsJson?: string;
+  /** Server scan-job id while detection runs async — lets a reload resume
+   *  polling instead of re-running (and re-billing) detection. */
+  jobId?: string;
   /** Which stage the last failure happened in — drives retry routing. */
   failedStage?: 'detect' | 'save';
   /** Machine-readable failure class for i18n copy + retry policy. */
