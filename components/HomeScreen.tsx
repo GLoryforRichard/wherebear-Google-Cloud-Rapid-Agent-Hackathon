@@ -142,7 +142,7 @@ export default function HomeScreen({ go }: HomeScreenProps) {
         position: 'relative', overflow: 'hidden',
       }}>
         <div style={{
-          width: 44, height: 44, borderRadius: 22, background: '#fff8e0',
+          width: 44, height: 44, borderRadius: 22, background: C.accentTint,
           display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.accentDark,
           flexShrink: 0, border: `1px solid ${C.accentChip}`,
         }}>

@@ -181,7 +181,7 @@ export default function ShelfScanner({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: '#cfdcc6',
+              color: '#d4d4d4',
               fontSize: 13,
               fontWeight: 500,
               gap: 8,
@@ -255,7 +255,7 @@ export default function ShelfScanner({
                 right: 18,
                 top: 0,
                 height: 2,
-                background: `linear-gradient(90deg, transparent 0%, ${C.primary}cc 25%, #c3e8b0 50%, ${C.primary}cc 75%, transparent 100%)`,
+                background: `linear-gradient(90deg, transparent 0%, ${C.primary}cc 25%, ${C.accent} 50%, ${C.primary}cc 75%, transparent 100%)`,
                 boxShadow: `0 0 18px 2px ${C.primary}cc`,
                 animation: 'scanline 2.4s cubic-bezier(.6,0,.4,1) infinite',
                 pointerEvents: 'none',
@@ -277,7 +277,7 @@ export default function ShelfScanner({
               style={{
                 position: 'absolute',
                 left: 0, right: 0, top: 16,
-                textAlign: 'center', color: '#e2f0d8',
+                textAlign: 'center', color: '#f0f0f0',
                 fontSize: 12, fontWeight: 600, letterSpacing: 0.4,
                 textShadow: '0 1px 4px rgba(0,0,0,0.4)',
                 pointerEvents: 'none',
@@ -383,7 +383,7 @@ function Bracket({ position }: { position: 'tl' | 'tr' | 'bl' | 'br' }) {
   const base: React.CSSProperties = {
     position: 'absolute',
     width: 28, height: 28,
-    borderColor: '#c3e8b0',
+    borderColor: '#ffc900',
     pointerEvents: 'none',
     filter: 'drop-shadow(0 1px 4px rgba(0,0,0,0.4))',
   };

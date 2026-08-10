@@ -129,7 +129,7 @@ export default function Page() {
             width: '100%', background: C.accentTint, border: `2px solid ${C.border}`, borderRadius: 20,
             padding: '24px 22px', display: 'flex', alignItems: 'center', gap: 18,
             fontFamily: FONT, cursor: 'pointer', textAlign: 'left', marginTop: 16,
-            boxShadow: hover ? '7px 7px 0 #111' : SHADOW,
+            boxShadow: hover ? '7px 7px 0 #111111' : SHADOW,
             transform: hover ? 'translate(-2px, -2px)' : 'none',
             transition: 'transform .14s ease, box-shadow .14s ease',
           }}

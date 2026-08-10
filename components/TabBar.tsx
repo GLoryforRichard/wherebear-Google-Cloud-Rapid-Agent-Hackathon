@@ -27,7 +27,8 @@ export default function TabBar({ active, onChange }: TabBarProps) {
       padding: '10px 8px',
       display: 'grid',
       gridTemplateColumns: 'repeat(3,1fr)',
-      boxShadow: '0 4px 18px rgba(20,40,20,0.08), 0 0 0 1px rgba(20,40,20,0.04)',
+      boxShadow: '4px 4px 0 #111111',
+      border: `2px solid ${C.border}`,
       zIndex: 30,
     }}>
       {tabs.map(t => {

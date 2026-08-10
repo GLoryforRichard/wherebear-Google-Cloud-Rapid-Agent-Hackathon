@@ -1,14 +1,14 @@
 import type { Metadata, Viewport } from "next";
-import { Space_Grotesk } from "next/font/google";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import StaleClientGuard from "@/components/StaleClientGuard";
 import QueueBoot from "@/components/QueueBoot";
 import GlobalScanIndicator from "@/components/GlobalScanIndicator";
 
-// Wherebear 3.0 "Gumroad" direction — Space Grotesk (geometric, neo-brutalist).
-const spaceGrotesk = Space_Grotesk({
+// Uber-adjacent geometric sans (Plus Jakarta Sans ≈ Uber Move feel).
+const jakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
-  variable: "--font-space",
+  variable: "--font-jakarta",
   display: "swap",
 });
 
@@ -29,8 +29,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${spaceGrotesk.variable} h-full`}>
-      <body className="min-h-full" style={{ fontFamily: 'var(--font-space), -apple-system, system-ui, sans-serif' }}>
+    <html lang="en" className={`${jakarta.variable} h-full`}>
+      <body className="min-h-full" style={{ fontFamily: 'var(--font-jakarta), -apple-system, system-ui, sans-serif' }}>
         <StaleClientGuard />
         <QueueBoot />
         {children}

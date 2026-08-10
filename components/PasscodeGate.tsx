@@ -161,7 +161,7 @@ function keyBtnStyle(isDel: boolean): React.CSSProperties {
     fontSize: isDel ? 24 : 28, fontWeight: 600, color: C.text,
     fontFamily: FONT, cursor: 'pointer',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    boxShadow: isDel ? 'none' : '0 1px 3px rgba(20,40,20,0.05)',
+    boxShadow: isDel ? 'none' : '2px 2px 0 #111111',
     WebkitUserSelect: 'none', userSelect: 'none',
   };
 }

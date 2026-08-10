@@ -511,7 +511,7 @@ function PhotoChip({
   const badgeColor =
     isFailed || isZeroResult ? '#c33' :
     photo.status === 'detecting' || photo.status === 'saving' ? C.accent :
-    photo.status === 'saved' ? '#8fd3a8' :
+    photo.status === 'saved' ? '#05944F' :
     photo.status === 'detected' ? C.primary :
     C.textMuted;
 

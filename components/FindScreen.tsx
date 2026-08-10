@@ -427,7 +427,7 @@ function ResultCard({
       {zoomSrc && (
         <div onClick={() => setZoomSrc(null)} style={{
           position: 'fixed', inset: 0, zIndex: 1000,
-          background: 'rgba(20,12,6,0.82)', display: 'flex',
+          background: 'rgba(0,0,0,0.72)', display: 'flex',
           alignItems: 'center', justifyContent: 'center', padding: 24,
           animation: 'fade .2s ease', cursor: 'zoom-out',
         }}>

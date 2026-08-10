@@ -61,17 +61,18 @@ export default function StaleClientGuard() {
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 9999,
-        background: '#2a1d13',
-        color: '#f4e8d3',
+        background: '#111111',
+        color: '#ffffff',
         padding: '10px 14px 10px 16px',
         borderRadius: 14,
-        boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
+        boxShadow: '4px 4px 0 #111111',
+        border: '2px solid #111111',
         display: 'flex',
         alignItems: 'center',
         gap: 12,
         fontSize: 13.5,
         fontWeight: 500,
-        fontFamily: 'var(--font-space), -apple-system, system-ui, sans-serif',
+        fontFamily: 'var(--font-jakarta), -apple-system, system-ui, sans-serif',
         maxWidth: 'calc(100vw - 32px)',
       }}
     >
@@ -79,15 +80,16 @@ export default function StaleClientGuard() {
       <button
         onClick={() => window.location.reload()}
         style={{
-          background: '#ff90e8',
+          background: '#ff8a00',
           color: '#111',
-          border: 'none',
+          border: '2px solid #111',
           padding: '6px 12px',
           borderRadius: 999,
           fontSize: 13,
           fontWeight: 700,
           cursor: 'pointer',
           fontFamily: 'inherit',
+          boxShadow: '2px 2px 0 #111',
         }}
       >
         Refresh
@@ -98,7 +100,7 @@ export default function StaleClientGuard() {
         style={{
           background: 'transparent',
           border: 'none',
-          color: '#a89784',
+          color: '#afafaf',
           fontSize: 18,
           lineHeight: 1,
           cursor: 'pointer',

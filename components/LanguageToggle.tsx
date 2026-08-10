@@ -22,7 +22,7 @@ export default function LanguageToggle({ size = 'sm' }: { size?: 'sm' | 'md' }) 
       style={{
         display: 'inline-flex', background: C.white,
         border: `1px solid ${C.border}`, borderRadius: 999,
-        padding: 2, fontFamily: FONT, boxShadow: '0 1px 3px rgba(20,40,20,0.04)',
+        padding: 2, fontFamily: FONT, boxShadow: '2px 2px 0 #111111',
       }}
     >
       {(['en', 'zh'] as const).map(code => {
