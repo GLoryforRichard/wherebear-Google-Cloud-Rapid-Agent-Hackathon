@@ -164,8 +164,7 @@ export default function Page() {
 
         <div style={{ flex: 1 }} />
 
-        {/* Staff entry → /admin. Deliberately prominent, with the demo
-            passcode printed right here so judges never hit a dead end. */}
+        {/* Staff entry → /admin. */}
         <div style={{ marginTop: 30 }}>
           <Link href="/admin" style={{
             width: '100%', boxSizing: 'border-box',
@@ -177,12 +176,6 @@ export default function Page() {
             <Icon name="settings" size={19} /> {t('staff_entry')}
             <Icon name="chevron-right" size={18} style={{ color: C.textMuted }} />
           </Link>
-          <div style={{
-            marginTop: 8, textAlign: 'center',
-            fontSize: 12.5, color: C.textMuted, fontWeight: 600, lineHeight: 1.4,
-          }}>
-            {t('staff_demo_code')}
-          </div>
         </div>
       </div>
     </div>

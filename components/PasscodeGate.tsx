@@ -97,15 +97,6 @@ export default function PasscodeGate({
       <div style={{ fontSize: 14, color: C.textMuted, marginTop: 4 }}>
         {t('passcode_hint')}
       </div>
-      {/* Demo deployment: surface the code right on the lock screen so
-          judges/visitors are never blocked. Remove for a real store. */}
-      <div style={{
-        marginTop: 10, padding: '7px 14px', borderRadius: 999,
-        background: C.primarySofter, color: C.primaryDark,
-        fontSize: 12.5, fontWeight: 700, textAlign: 'center', lineHeight: 1.4,
-      }}>
-        {t('staff_demo_code')}
-      </div>
 
       {/* Passcode dots */}
       <div style={{

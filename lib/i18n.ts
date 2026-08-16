@@ -117,7 +117,6 @@ export const STRINGS = {
 
     // Route split: customer home + staff workspace
     staff_entry: 'Staff workspace',
-    staff_demo_code: 'Demo passcode: 2627 — shown on purpose so judges can explore the staff tools.',
     cust_find_desc: 'Search by name, brand, or description — in any language.',
     admin_title: 'Staff workspace',
     admin_subtitle: 'Add shelves, manage saved products, try a search.',
@@ -311,7 +310,6 @@ export const STRINGS = {
 
     // Route split: customer home + staff workspace
     staff_entry: '店员工作台',
-    staff_demo_code: '演示密码：2627（为方便评委体验而特意公开）',
     cust_find_desc: '用品名、品牌或描述搜索 —— 任何语言都行。',
     admin_title: '员工工作台',
     admin_subtitle: '添加货架、管理已存商品、试搜一下。',
