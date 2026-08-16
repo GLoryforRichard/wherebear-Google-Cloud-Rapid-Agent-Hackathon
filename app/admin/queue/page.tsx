@@ -8,11 +8,14 @@
  * keeps the module-singleton queue and its in-flight requests alive.
  */
 
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import PasscodeGate from '@/components/PasscodeGate';
 import ScreenHeader from '@/components/ScreenHeader';
 import BearFace from '@/components/BearFace';
+import Icon from '@/components/Icon';
+import ScanResultPreview from '@/components/ScanResultPreview';
 import { C, FONT } from '@/lib/theme';
 import { useTranslation } from '@/lib/i18n';
 import { STAFF_PASSCODE, STAFF_UNLOCK_KEY } from '@/lib/staff-gate';
@@ -36,6 +39,7 @@ function QueueScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const { items } = useScanQueue();
+  const [openId, setOpenId] = useState<string | null>(null);
 
   const active = items.filter(
     (i) => i.status === 'queued' || i.status === 'detecting' || i.status === 'detected' || i.status === 'saving'
@@ -77,7 +81,13 @@ function QueueScreen() {
         {active.length > 0 && (
           <Section title={t('queue_section_active')}>
             {active.map((item, idx) => (
-              <QueueRow key={item.id} item={item} first={idx === 0} />
+              <QueueRow
+                key={item.id}
+                item={item}
+                first={idx === 0}
+                open={openId === item.id}
+                onToggle={() => setOpenId(openId === item.id ? null : item.id)}
+              />
             ))}
           </Section>
         )}
@@ -85,7 +95,13 @@ function QueueScreen() {
         {failed.length > 0 && (
           <Section title={t('queue_section_failed')}>
             {failed.map((item, idx) => (
-              <QueueRow key={item.id} item={item} first={idx === 0} />
+              <QueueRow
+                key={item.id}
+                item={item}
+                first={idx === 0}
+                open={openId === item.id}
+                onToggle={() => setOpenId(openId === item.id ? null : item.id)}
+              />
             ))}
           </Section>
         )}
@@ -107,7 +123,13 @@ function QueueScreen() {
             }
           >
             {saved.map((item, idx) => (
-              <QueueRow key={item.id} item={item} first={idx === 0} />
+              <QueueRow
+                key={item.id}
+                item={item}
+                first={idx === 0}
+                open={openId === item.id}
+                onToggle={() => setOpenId(openId === item.id ? null : item.id)}
+              />
             ))}
           </Section>
         )}
@@ -145,11 +167,19 @@ function Section({ title, action, children }: { title: string; action?: React.Re
   );
 }
 
-function QueueRow({ item, first }: { item: QueueItem; first: boolean }) {
+function QueueRow({
+  item, first, open, onToggle,
+}: {
+  item: QueueItem;
+  first: boolean;
+  open: boolean;
+  onToggle: () => void;
+}) {
   const { t } = useTranslation();
   const isFailed = item.status === 'failed';
   const isSaved = item.status === 'saved';
   const inFlight = item.status === 'detecting' || item.status === 'saving';
+  const canOpen = item.products.length > 0;
   const waitingBackoff =
     (item.status === 'queued' || item.status === 'detected') &&
     !!item.nextAttemptAt && item.nextAttemptAt > Date.now();
@@ -170,60 +200,90 @@ function QueueRow({ item, first }: { item: QueueItem; first: boolean }) {
 
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px',
       borderTop: first ? 'none' : `1px solid ${C.border}`,
-      background: isFailed ? ERR_BG : 'transparent',
+      background: isFailed ? ERR_BG : open ? C.primarySofter : 'transparent',
     }}>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={item.previewUrl}
-        alt=""
-        style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 10, border: `1px solid ${C.border}`, flexShrink: 0 }}
-      />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-          <span style={{
-            fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12.5, fontWeight: 800,
-            background: C.accentChip, border: `1px solid ${C.border}`, borderRadius: 6, padding: '1px 7px',
-          }}>
-            {item.aisle}
-          </span>
-          {item.products.length > 0 && (
-            <span style={{ fontSize: 12, color: C.textMuted }}>{t('queue_products_n', item.products.length)}</span>
-          )}
-        </div>
-        <div style={{
-          fontSize: 12.5, fontWeight: 600,
-          color: isFailed ? ERR_RED : isSaved ? OK_GREEN : C.textMuted,
-          display: 'flex', alignItems: 'center', gap: 6,
-        }}>
-          {inFlight && (
-            <span style={{
-              width: 7, height: 7, borderRadius: '50%', background: C.primary,
-              animation: 'pulse 1.4s ease-in-out infinite', flexShrink: 0,
-            }} />
-          )}
-          {isSaved && <span>✓</span>}
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{statusLabel}</span>
-        </div>
-        {inFlight && (
-          <div style={{ height: 3, borderRadius: 2, background: C.bgMuted, marginTop: 6, overflow: 'hidden', position: 'relative' }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px',
+      }}>
+        <button
+          type="button"
+          onClick={canOpen ? onToggle : undefined}
+          disabled={!canOpen}
+          aria-expanded={open}
+          title={canOpen ? t('queue_view_scan') : undefined}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0,
+            background: 'none', border: 'none', padding: 0, textAlign: 'left',
+            cursor: canOpen ? 'pointer' : 'default', fontFamily: FONT,
+          }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={item.previewUrl}
+            alt=""
+            style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 10, border: `1px solid ${C.border}`, flexShrink: 0 }}
+          />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+              <span style={{
+                fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12.5, fontWeight: 800,
+                background: C.accentChip, border: `1px solid ${C.border}`, borderRadius: 6, padding: '1px 7px',
+              }}>
+                {item.aisle}
+              </span>
+              {item.products.length > 0 && (
+                <span style={{ fontSize: 12, color: C.textMuted }}>{t('queue_products_n', item.products.length)}</span>
+              )}
+            </div>
             <div style={{
-              position: 'absolute', top: 0, bottom: 0, width: '40%', borderRadius: 2,
-              background: `linear-gradient(90deg, transparent, ${C.primary}, transparent)`,
-              animation: 'indeterminate 1.2s ease-in-out infinite',
-            }} />
+              fontSize: 12.5, fontWeight: 600,
+              color: isFailed ? ERR_RED : isSaved ? OK_GREEN : C.textMuted,
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}>
+              {inFlight && (
+                <span style={{
+                  width: 7, height: 7, borderRadius: '50%', background: C.primary,
+                  animation: 'pulse 1.4s ease-in-out infinite', flexShrink: 0,
+                }} />
+              )}
+              {isSaved && <span>✓</span>}
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{statusLabel}</span>
+            </div>
+            {inFlight && (
+              <div style={{ height: 3, borderRadius: 2, background: C.bgMuted, marginTop: 6, overflow: 'hidden', position: 'relative' }}>
+                <div style={{
+                  position: 'absolute', top: 0, bottom: 0, width: '40%', borderRadius: 2,
+                  background: `linear-gradient(90deg, transparent, ${C.primary}, transparent)`,
+                  animation: 'indeterminate 1.2s ease-in-out infinite',
+                }} />
+              </div>
+            )}
           </div>
-        )}
+          {canOpen && (
+            <Icon
+              name="chevron-down"
+              size={18}
+              style={{
+                color: C.textMuted, flexShrink: 0,
+                transform: open ? 'rotate(180deg)' : 'none',
+                transition: 'transform .2s',
+              }}
+            />
+          )}
+        </button>
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+          {isFailed && !item.permanent && (
+            <RowButton label={t('queue_retry')} onClick={() => retryItem(item.id)} tone="primary" />
+          )}
+          {!isSaved && (
+            <RowButton label={t('queue_delete')} onClick={() => removeItem(item.id)} tone="danger" />
+          )}
+        </div>
       </div>
-      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-        {isFailed && !item.permanent && (
-          <RowButton label={t('queue_retry')} onClick={() => retryItem(item.id)} tone="primary" />
-        )}
-        {!isSaved && (
-          <RowButton label={t('queue_delete')} onClick={() => removeItem(item.id)} tone="danger" />
-        )}
-      </div>
+      {open && canOpen && (
+        <ScanResultPreview previewUrl={item.previewUrl} products={item.products} />
+      )}
     </div>
   );
 }

@@ -216,6 +216,7 @@ function ResultCard({
 }) {
   const { t, lang } = useTranslation();
   const [zoomSrc, setZoomSrc] = useState<string | null>(null);
+  const [openGuess, setOpenGuess] = useState<number | null>(null);
   const found = candidates.length > 0;
   const hasGuess = !found && guesses.length > 0;
   // In English mode the answer line is English-only; the Chinese line only
@@ -375,23 +376,66 @@ function ResultCard({
               {guesses.map((g, idx) => {
                 const gAisles = cardAisles(g);
                 const ais = gAisles.fresh.length ? gAisles.fresh : gAisles.stale;
+                const isOpen = openGuess === idx;
                 return (
                   <div key={`${g.canonical_name}-${idx}`} style={{
-                    display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
                     background: C.accentTint, border: `1px dashed ${C.accentChip}`,
-                    borderRadius: 12, padding: '10px 12px', marginBottom: 8,
+                    borderRadius: 12, marginBottom: 8, overflow: 'hidden',
                     ...reveal(2 + idx),
                   }}>
-                    <span style={{ fontSize: 14.5, fontWeight: 700, color: C.text }}>{g.canonical_name}</span>
-                    {ais.map((a, j) => (
-                      <span key={`${a}-${j}`} style={{
-                        display: 'inline-flex', alignItems: 'center',
-                        background: C.accentChip, color: C.accentDark,
-                        padding: '2px 9px', borderRadius: 999,
-                        fontSize: 12.5, fontWeight: 700,
-                        fontFamily: 'ui-monospace, monospace', letterSpacing: 0.3,
-                      }}>{a}</span>
-                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setOpenGuess(isOpen ? null : idx)}
+                      aria-expanded={isOpen}
+                      title={t('find_guess_tap')}
+                      style={{
+                        width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                        flexWrap: 'wrap', padding: '10px 12px',
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        fontFamily: FONT, textAlign: 'left',
+                      }}
+                    >
+                      <span style={{ fontSize: 14.5, fontWeight: 700, color: C.text, flex: 1, minWidth: 0 }}>{g.canonical_name}</span>
+                      {ais.map((a, j) => (
+                        <span key={`${a}-${j}`} style={{
+                          display: 'inline-flex', alignItems: 'center',
+                          background: C.accentChip, color: C.accentDark,
+                          padding: '2px 9px', borderRadius: 999,
+                          fontSize: 12.5, fontWeight: 700,
+                          fontFamily: 'ui-monospace, monospace', letterSpacing: 0.3,
+                        }}>{a}</span>
+                      ))}
+                      <Icon name="chevron-down" size={18} style={{
+                        color: C.accentDark, flexShrink: 0, marginLeft: 'auto',
+                        transform: isOpen ? 'rotate(180deg)' : 'none',
+                        transition: 'transform .2s',
+                      }} />
+                    </button>
+                    {isOpen && (
+                      <div style={{ padding: '0 12px 12px' }}>
+                        {g.thumbnail ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={g.thumbnail}
+                            alt={g.canonical_name}
+                            onClick={(e) => { e.stopPropagation(); setZoomSrc(g.thumbnail!); }}
+                            title={t('find_tap_zoom')}
+                            style={{
+                              width: '100%', maxHeight: 220, objectFit: 'contain',
+                              borderRadius: 10, border: `1px solid ${C.border}`,
+                              background: C.white, cursor: 'zoom-in', display: 'block',
+                            }}
+                          />
+                        ) : (
+                          <div style={{
+                            fontSize: 13, color: C.textMuted, fontWeight: 600,
+                            padding: '12px 8px', textAlign: 'center',
+                          }}>
+                            {t('find_guess_no_photo')}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
