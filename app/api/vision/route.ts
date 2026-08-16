@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runShelfIntake } from '@/lib/scan/intake';
 import { logOp } from '@/lib/ops';
+import { isScanLabEnabled, scanLabNotFound } from '@/lib/scan-lab';
 
 export const runtime = 'nodejs';
 // rows-hd pipeline: rows call + up to 8 band calls (with one serial retry
@@ -14,6 +15,7 @@ export const maxDuration = 300;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 
 export async function POST(req: NextRequest) {
+  if (!isScanLabEnabled()) return scanLabNotFound();
   // Captured up here so the failure log in `catch` can describe the request
   // (the formData locals are out of scope down there).
   let reqInfo = 'aisle=(none) file=(none)';

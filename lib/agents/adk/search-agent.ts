@@ -117,6 +117,9 @@ export function getSearchAgent(): LlmAgent {
       // Tool routing is pattern work, not reasoning. Leaving thinking ON was
       // costing 2-12 s PER agent turn on gemini-3.5-flash (dynamic thinking).
       thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
+      // Orchestrator only emits DONE + tiny tool calls. Cap stops a runaway
+      // completion (e.g. "rosemary" dumping tens of thousands of tokens).
+      maxOutputTokens: 4096,
     },
   });
   return _agent;

@@ -5,6 +5,7 @@ import { runWherebearParadigm } from '@/lib/compare/run-wherebear';
 import { prewarmScan, runWhatAisleParadigm } from '@/lib/compare/run-whataisle';
 import { heicToJpeg, sniffHeic } from '@/lib/scan/image';
 import { CompareParadigm, CompareRunResult } from '@/lib/compare/types';
+import { isScanLabEnabled, scanLabNotFound } from '@/lib/scan-lab';
 
 export const runtime = 'nodejs';
 // One paradigm per request (the client fires three in parallel). Dense
@@ -68,6 +69,7 @@ function previewShared(jpeg: Buffer): Promise<string> {
 }
 
 export async function POST(req: NextRequest) {
+  if (!isScanLabEnabled()) return scanLabNotFound();
   let paradigm: CompareParadigm | 'prepare' | undefined;
   try {
     const formData = await req.formData();

@@ -25,6 +25,7 @@ import type {
   LabRunArtifact,
 } from '@/lib/costlab/types';
 import { ScanFailedError } from '@/lib/scan/detect';
+import { isScanLabEnabled, scanLabNotFound } from '@/lib/scan-lab';
 
 export const runtime = 'nodejs';
 export const maxDuration = 900;
@@ -50,6 +51,7 @@ function authorized(req: NextRequest): boolean {
 }
 
 export async function POST(req: NextRequest) {
+  if (!isScanLabEnabled()) return scanLabNotFound();
   if (!authorized(req)) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
   }
@@ -127,6 +129,7 @@ async function loadArtifact(dir: string, file: string): Promise<LabRunArtifact |
 }
 
 export async function GET(req: NextRequest) {
+  if (!isScanLabEnabled()) return scanLabNotFound();
   if (!authorized(req)) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
   }
