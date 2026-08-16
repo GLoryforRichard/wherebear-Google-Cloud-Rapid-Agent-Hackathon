@@ -16,6 +16,12 @@ interface ShelfScannerProps {
 
 type Mode = 'idle' | 'starting' | 'live' | 'captured' | 'denied' | 'unavailable';
 
+function isImageFile(f: File): boolean {
+  if (f.type.startsWith('image/')) return true;
+  // iOS sometimes hands album HEIC with an empty MIME type.
+  return /\.(jpe?g|png|webp|heic|heif|gif)$/i.test(f.name);
+}
+
 export default function ShelfScanner({
   capturedPreview,
   onCapture,
@@ -100,7 +106,7 @@ export default function ShelfScanner({
     // otherwise hand us a PDF etc.
     const arr: File[] = [];
     for (let i = 0; i < list.length; i++) {
-      if (list[i].type.startsWith('image/')) arr.push(list[i]);
+      if (isImageFile(list[i])) arr.push(list[i]);
     }
     e.target.value = ''; // allow re-selecting the same files later
     if (arr.length === 0) return;

@@ -250,6 +250,7 @@ function errorLabel(item: QueueItem, t: ReturnType<typeof useTranslation>['t']):
     case 'network': return t('queue_err_network');
     case 'too_large': return t('queue_err_too_large');
     case 'nothing_detected': return t('queue_err_nothing_detected');
+    case 'unreadable': return t('queue_err_unreadable');
     case 'save': return t('queue_err_save');
     case 'server': return t('queue_err_server');
     default: return item.error || t('queue_err_server');

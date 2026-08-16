@@ -31,11 +31,21 @@ const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
+    let formData: FormData;
+    try {
+      formData = await req.formData();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[vision-jobs] submit failed: ${msg} (content-type=${req.headers.get('content-type') ?? ''} content-length=${req.headers.get('content-length') ?? ''})`
+      );
+      return NextResponse.json({ ok: false, error: 'unreadable photo' }, { status: 400 });
+    }
     const file = formData.get('image');
     const aisle = (formData.get('aisle') as string | null)?.trim() ?? '';
 
-    if (!(file instanceof File)) {
+    // Duck-type Blob: some runtimes hand back a Blob that isn't `instanceof File`.
+    if (!(file instanceof Blob) || file.size === 0) {
       return NextResponse.json({ ok: false, error: 'No image file provided' }, { status: 400 });
     }
     if (file.size > MAX_IMAGE_BYTES) {

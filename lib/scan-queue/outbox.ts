@@ -20,6 +20,7 @@ export type QueueErrorCode =
   | 'network'
   | 'too_large'
   | 'nothing_detected'
+  | 'unreadable'
   | 'server'
   | 'save';
 

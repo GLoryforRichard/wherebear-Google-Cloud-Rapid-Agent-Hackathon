@@ -48,6 +48,7 @@ import {
   removeItem as storeRemoveItem,
   updateItem,
 } from './store';
+import { preparePhoto, reviveBlob } from './prepare-photo';
 
 // Outstanding server jobs this client keeps in flight (submitted, not yet
 // done). Submissions are cheap 202s — the server's queue cap + worker
@@ -76,28 +77,36 @@ function newId(): string {
 export async function enqueuePhotos(files: File[] | Blob[], aisle: string): Promise<void> {
   for (const file of files) {
     const id = newId();
+    const createdAt = Date.now();
+    let blob: Blob;
+    try {
+      blob = await preparePhoto(file);
+    } catch (e) {
+      console.warn('[queue] preparePhoto failed, keeping original:', e);
+      blob = reviveBlob(file);
+    }
     const record: OutboxRecord = {
       id,
       aisle,
-      blob: file,
+      blob,
       status: 'queued',
       attempts: 0,
-      createdAt: Date.now(),
+      createdAt,
     };
     if (outboxSupported()) {
       // Quota/private-mode failures degrade to in-memory-only (upload still
       // runs; only reload-survival is lost).
-      await outboxPut(record).catch((e) => console.warn('[queue] outbox put failed:', e));
+      await outboxPut(record).catch((err) => console.warn('[queue] outbox put failed:', err));
     }
-    blobs.set(id, file);
+    blobs.set(id, blob);
     addItem({
       id,
       aisle,
       status: 'queued',
-      previewUrl: URL.createObjectURL(file),
+      previewUrl: URL.createObjectURL(blob),
       products: [],
       attempts: 0,
-      createdAt: record.createdAt,
+      createdAt,
     });
   }
   void pump();
@@ -171,12 +180,13 @@ export async function restoreFromOutbox(): Promise<void> {
     const products: DetectedProduct[] = r.productsJson
       ? (JSON.parse(r.productsJson) as DetectedProduct[])
       : [];
-    blobs.set(r.id, r.blob);
+    const blob = reviveBlob(r.blob);
+    blobs.set(r.id, blob);
     addItem({
       id: r.id,
       aisle: r.aisle,
       status,
-      previewUrl: URL.createObjectURL(r.blob),
+      previewUrl: URL.createObjectURL(blob),
       products,
       jobId: r.jobId,
       failedStage: r.failedStage,
@@ -280,9 +290,31 @@ function failItem(
  *  The item stays 'detecting' while the poll loop tracks the job. */
 async function submitOne(id: string): Promise<void> {
   const item = getItem(id);
-  const blob = blobs.get(id);
-  if (!item || !blob) return;
+  const raw = blobs.get(id);
+  if (!item || !raw) return;
   try {
+    let blob: Blob;
+    try {
+      blob = await preparePhoto(raw);
+    } catch (err) {
+      if (!getItem(id)) return;
+      failItem(
+        id,
+        'detect',
+        'unreadable',
+        err instanceof Error ? err.message : String(err),
+        { autoRetry: false }
+      );
+      return;
+    }
+    if (!getItem(id)) return;
+    if (blob !== raw) {
+      const prevUrl = getItem(id)?.previewUrl;
+      blobs.set(id, blob);
+      updateItem(id, { previewUrl: URL.createObjectURL(blob) });
+      if (prevUrl) URL.revokeObjectURL(prevUrl);
+      void outboxUpdate(id, { blob });
+    }
     const fd = new FormData();
     fd.append('image', blob, 'photo.jpg');
     fd.append('aisle', item.aisle);
@@ -317,7 +349,9 @@ async function submitOne(id: string): Promise<void> {
       return;
     }
     if (!data?.ok || !data.jobId) {
-      failItem(id, 'detect', 'server', data?.error || `HTTP ${res.status}`);
+      const msg = data?.error || `HTTP ${res.status}`;
+      const unreadable = /unreadable|formdata|boundary/i.test(msg);
+      failItem(id, 'detect', unreadable ? 'unreadable' : 'server', msg);
       return;
     }
     updateItem(id, { jobId: data.jobId, jobStage: undefined });
